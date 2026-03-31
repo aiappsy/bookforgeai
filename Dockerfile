@@ -11,9 +11,10 @@ RUN npm install
 COPY . .
 
 # Build the app (GEMINI_API_KEY must be provided as a build arg or env var here)
-ARG GEMINI_API_KEY
+ARG GEMINI_API_KEY="AIzaSyBridFzvPHTnk3ppWD273k960Fe76US6WM"
 ENV GEMINI_API_KEY=$GEMINI_API_KEY
 RUN npm run build
+
 
 # Production stage
 FROM node:20-alpine
