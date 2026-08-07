@@ -1,0 +1,81 @@
+{
+  "entities": {
+    "UserSettings": {
+      "title": "UserSettings",
+      "description": "User specific settings including their BYOK and custom prompts for each category.",
+      "type": "object",
+      "properties": {
+        "customApiKey": { "type": "string", "description": "User's provided Gemini API key" },
+        "prompts": {
+          "type": "object",
+          "properties": {
+            "non_fiction": { "type": "string" },
+            "fiction": { "type": "string" },
+            "guides": { "type": "string" }
+          }
+        }
+      },
+      "required": ["prompts"]
+    },
+    "Project": {
+      "title": "Project",
+      "description": "A manuscript project created by a user.",
+      "type": "object",
+      "properties": {
+        "ownerId": { "type": "string" },
+        "title": { "type": "string" },
+        "updatedAt": { "type": "number" },
+        "idea": { "type": "string" },
+        "category": { "type": "string" },
+        "research": { "type": "string", "description": "JSON string of research data" },
+        "outline": { "type": "string" },
+        "assets": { "type": "string", "description": "JSON string of assets data" }
+      },
+      "required": ["ownerId", "title", "updatedAt", "category"]
+    },
+    "Chapter": {
+      "title": "Chapter",
+      "description": "A chapter within a project.",
+      "type": "object",
+      "properties": {
+        "projectId": { "type": "string" },
+        "ownerId": { "type": "string", "description": "Denormalized ownerId for secure list queries" },
+        "title": { "type": "string" },
+        "content": { "type": "string" },
+        "status": { "type": "string" },
+        "order": { "type": "number" }
+      },
+      "required": ["projectId", "ownerId", "title", "status", "order"]
+    },
+    "Chat": {
+      "title": "Chat",
+      "description": "A chat log for a project or chapter.",
+      "type": "object",
+      "properties": {
+        "projectId": { "type": "string" },
+        "ownerId": { "type": "string" },
+        "targetId": { "type": "string", "description": "Could be outline or a chapter ID" },
+        "messages": { "type": "string", "description": "JSON string of chat history" }
+      },
+      "required": ["projectId", "ownerId", "targetId", "messages"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}/settings/{settingId}": {
+      "schema": { "$ref": "#/entities/UserSettings" },
+      "description": "User preferences and BYOK. settingId is always 'config'."
+    },
+    "/projects/{projectId}": {
+      "schema": { "$ref": "#/entities/Project" },
+      "description": "Root collection of projects."
+    },
+    "/projects/{projectId}/chapters/{chapterId}": {
+      "schema": { "$ref": "#/entities/Chapter" },
+      "description": "Subcollection of chapters for a specific project."
+    },
+    "/projects/{projectId}/chats/{chatId}": {
+      "schema": { "$ref": "#/entities/Chat" },
+      "description": "Subcollection of chat configurations."
+    }
+  }
+}

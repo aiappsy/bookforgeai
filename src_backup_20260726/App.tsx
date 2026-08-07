@@ -1,5 +1,5 @@
-import React, { useState, useRef, useEffect, useMemo, ChangeEvent } from 'react';
-import { BookOpen, FileText, Image as ImageIcon, Headphones, Settings, CheckCircle2, Loader2, Download, PlayCircle, MessageSquare, Send, ChevronRight, ChevronLeft, PanelLeft, List, Key, X, UploadCloud, Library, Plus, Paperclip, User, Tag, Type, Sparkles, Link, Menu, Trash2, Save, Edit3, Sliders, Check, RotateCcw, RotateCw, History, SlidersHorizontal, Palette, Copy, Wand2, LifeBuoy, AlertTriangle, RefreshCw, Layers, Box, Eye, Book, Megaphone, Share2, Mail, Globe, Compass, ExternalLink, Calendar, Award, Search, HelpCircle, DollarSign, Square, ListTree, AlignLeft, Printer, TrendingUp, Brain } from 'lucide-react';
+import React, { useState, useRef, useEffect, ChangeEvent } from 'react';
+import { BookOpen, FileText, Image as ImageIcon, Headphones, Settings, CheckCircle2, Loader2, Download, PlayCircle, MessageSquare, Send, ChevronRight, List, Key, X, UploadCloud, Library, Plus, Paperclip, User, Tag, Type, Sparkles, Link, Menu, Trash2, Save, Edit3, Sliders, Check, RotateCcw, RotateCw, History, SlidersHorizontal, Palette, Copy, Wand2, LifeBuoy, AlertTriangle, RefreshCw, Layers, Box, Eye, Book, Megaphone, Share2, Mail, Globe, Compass, ExternalLink, Calendar, Award } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import Markdown from 'react-markdown';
 import {
@@ -21,33 +21,14 @@ import {
   generateEmailLaunchSequence,
   generateMediaPitch,
   generateLandingPageCopy,
-  generateMarketingStrategyPlan,
-  generateBetaReaderCritique,
-  generateAudiobookScript,
-  generateBookKeywords,
-  extractLearnedRulesFromFeedback,
-  summarizeChapterForContinuity,
-  LearnedRule,
-  ContinuityContext
+  generateMarketingStrategyPlan
 } from './services/geminiService';
 import { exportToDocx, exportPublishingZipBundle, exportLandingPageHtml } from './services/exportService';
-import { extractTextFromFile } from './utils/fileParser';
 import { saveProject, loadProject, getProjectsList, deleteProject, getUserSettings, saveUserSettings, saveEmergencySnapshot, scanAllLocalBackups, savePublishedLandingPage, getPublishedLandingPage, deletePublishedLandingPage, PublishedLandingData } from './services/storage';
 import { auth, loginWithGoogle, logoutUser } from './services/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
-import { CommandPalette } from './components/CommandPalette';
-import { HelpDrawer } from './components/HelpDrawer';
-import { PriceRoyaltyCalculator } from './components/PriceRoyaltyCalculator';
-import { BetaReaderSimulator } from './components/BetaReaderSimulator';
-import { AudiobookAssistant } from './components/AudiobookAssistant';
-import { TableOfContentsStudio } from './components/TableOfContentsStudio';
-import { HumanizerStudio } from './components/HumanizerStudio';
-import { AudiobookStudio } from './components/AudiobookStudio';
-import { AmazonNicheResearchStudio } from './components/AmazonNicheResearchStudio';
-import { ContinuityMemoryModal } from './components/ContinuityMemoryModal';
-import { humanizeManuscript, analyzeAiScore } from './services/geminiService';
 
-type ViewMode = 'library' | 'setup' | 'details' | 'outline' | 'toc' | 'chapter' | 'assets' | 'marketing' | 'humanizer' | 'audiobook' | 'research';
+type ViewMode = 'library' | 'setup' | 'details' | 'outline' | 'chapter' | 'assets' | 'marketing';
 
 type Category = 'non_fiction' | 'fiction' | 'guides';
 
@@ -73,273 +54,6 @@ const LANGUAGES = [
   "Korean",
   "Chinese"
 ];
-
-const BISAC_CATEGORIES = [
-  // FICTION
-  "FICTION / General",
-  "FICTION / Action & Adventure",
-  "FICTION / African American / General",
-  "FICTION / Classics",
-  "FICTION / Contemporary Women",
-  "FICTION / Crime",
-  "FICTION / Dystopian",
-  "FICTION / Fairy Tales, Folk Tales, Legends & Mythology",
-  "FICTION / Family Life",
-  "FICTION / Fantasy / General",
-  "FICTION / Fantasy / Action & Adventure",
-  "FICTION / Fantasy / Dark Fantasy",
-  "FICTION / Fantasy / Dragon & Mythical",
-  "FICTION / Fantasy / Epic",
-  "FICTION / Fantasy / Historical",
-  "FICTION / Fantasy / Paranormal",
-  "FICTION / Fantasy / Urban",
-  "FICTION / Historical / General",
-  "FICTION / Horror",
-  "FICTION / Humorous / General",
-  "FICTION / Literary",
-  "FICTION / Medical",
-  "FICTION / Mystery & Detective / General",
-  "FICTION / Mystery & Detective / Cozy / General",
-  "FICTION / Mystery & Detective / Hardboiled",
-  "FICTION / Mystery & Detective / Police Procedural",
-  "FICTION / Mystery & Detective / Women Sleuths",
-  "FICTION / Psychological",
-  "FICTION / Romance / General",
-  "FICTION / Romance / Clean & Wholesome",
-  "FICTION / Romance / Contemporary",
-  "FICTION / Romance / Fantasy",
-  "FICTION / Romance / Historical / General",
-  "FICTION / Romance / Romantic Comedy",
-  "FICTION / Romance / Sci-Fi",
-  "FICTION / Romance / Suspense",
-  "FICTION / Science Fiction / General",
-  "FICTION / Science Fiction / Alien Contact",
-  "FICTION / Science Fiction / Cyberpunk",
-  "FICTION / Science Fiction / Dystopian",
-  "FICTION / Science Fiction / Space Opera",
-  "FICTION / Science Fiction / Time Travel",
-  "FICTION / Short Stories (single author)",
-  "FICTION / Thrillers / General",
-  "FICTION / Thrillers / Crime",
-  "FICTION / Thrillers / Legal",
-  "FICTION / Thrillers / Medical",
-  "FICTION / Thrillers / Political",
-  "FICTION / Thrillers / Psychological",
-  "FICTION / Thrillers / Spy & Espionage",
-  "FICTION / Thrillers / Suspense",
-  "FICTION / Thrillers / Technological",
-  "FICTION / Urban & Street Lit",
-  "FICTION / Westerns",
-
-  // NON-FICTION - BUSINESS & ECONOMICS
-  "NON-FICTION / General",
-  "BUSINESS & ECONOMICS / General",
-  "BUSINESS & ECONOMICS / Accounting",
-  "BUSINESS & ECONOMICS / Advertising & Promotion",
-  "BUSINESS & ECONOMICS / Artificial Intelligence",
-  "BUSINESS & ECONOMICS / Consulting",
-  "BUSINESS & ECONOMICS / E-Commerce / General",
-  "BUSINESS & ECONOMICS / Economics / General",
-  "BUSINESS & ECONOMICS / Entrepreneurship",
-  "BUSINESS & ECONOMICS / Finance / General",
-  "BUSINESS & ECONOMICS / Finance / Personal",
-  "BUSINESS & ECONOMICS / Human Resources & Personnel Management",
-  "BUSINESS & ECONOMICS / International / General",
-  "BUSINESS & ECONOMICS / Investments & Securities / General",
-  "BUSINESS & ECONOMICS / Leadership",
-  "BUSINESS & ECONOMICS / Management",
-  "BUSINESS & ECONOMICS / Marketing / General",
-  "BUSINESS & ECONOMICS / Real Estate",
-  "BUSINESS & ECONOMICS / Sales & Selling",
-  "BUSINESS & ECONOMICS / Small Business",
-  "BUSINESS & ECONOMICS / Strategic Planning",
-
-  // NON-FICTION - SELF-HELP & PERSONAL DEVELOPMENT
-  "SELF-HELP / General",
-  "SELF-HELP / Affirmations",
-  "SELF-HELP / Aging",
-  "SELF-HELP / Anxieties & Phobias",
-  "SELF-HELP / Communication & Social Skills",
-  "SELF-HELP / Creativity",
-  "SELF-HELP / Emotional Healing",
-  "SELF-HELP / Habits & Routines",
-  "SELF-HELP / Journaling",
-  "SELF-HELP / Motivational & Inspirational",
-  "SELF-HELP / Personal Growth / General",
-  "SELF-HELP / Personal Growth / Happiness",
-  "SELF-HELP / Personal Growth / Success",
-  "SELF-HELP / Relationships / General",
-  "SELF-HELP / Self-Management / Stress Management",
-  "SELF-HELP / Self-Management / Time Management",
-  "SELF-HELP / Spiritual",
-
-  // NON-FICTION - HEALTH, FITNESS & WELLNESS
-  "HEALTH & FITNESS / General",
-  "HEALTH & FITNESS / Alternative Therapies",
-  "HEALTH & FITNESS / Beauty & Grooming",
-  "HEALTH & FITNESS / Diet & Nutrition / Diets",
-  "HEALTH & FITNESS / Diet & Nutrition / General",
-  "HEALTH & FITNESS / Exercise / General",
-  "HEALTH & FITNESS / Healthy Living & Wellness",
-  "HEALTH & FITNESS / Mental Health",
-  "HEALTH & FITNESS / Mind & Body",
-  "HEALTH & FITNESS / Sleep",
-  "HEALTH & FITNESS / Weight Loss",
-  "HEALTH & FITNESS / Yoga",
-
-  // NON-FICTION - TECHNOLOGY, COMPUTERS & SCIENCE
-  "COMPUTERS / General",
-  "COMPUTERS / Artificial Intelligence & Semantics",
-  "COMPUTERS / Business Software / General",
-  "COMPUTERS / Computer Science",
-  "COMPUTERS / Data Science & Data Analytics",
-  "COMPUTERS / Information Technology",
-  "COMPUTERS / Languages / General",
-  "COMPUTERS / Networking / General",
-  "COMPUTERS / Security / General",
-  "COMPUTERS / Software Development & Engineering",
-  "COMPUTERS / Web / General",
-  "TECHNOLOGY & ENGINEERING / General",
-  "TECHNOLOGY & ENGINEERING / Robotics",
-  "SCIENCE / General",
-  "SCIENCE / Astronomy",
-  "SCIENCE / Physics / General",
-
-  // BIOGRAPHY, AUTOBIOGRAPHY & MEMOIR
-  "BIOGRAPHY & AUTOBIOGRAPHY / General",
-  "BIOGRAPHY & AUTOBIOGRAPHY / Artists, Architects, Photographers",
-  "BIOGRAPHY & AUTOBIOGRAPHY / Business",
-  "BIOGRAPHY & AUTOBIOGRAPHY / Historical",
-  "BIOGRAPHY & AUTOBIOGRAPHY / Literary Figures",
-  "BIOGRAPHY & AUTOBIOGRAPHY / Personal Memoirs",
-  "BIOGRAPHY & AUTOBIOGRAPHY / Political",
-  "BIOGRAPHY & AUTOBIOGRAPHY / Science & Technology",
-
-  // COOKING, FOOD & WINE
-  "COOKING / General",
-  "COOKING / Baking",
-  "COOKING / Comfort Food",
-  "COOKING / Health & Healing / General",
-  "COOKING / Quick & Easy",
-  "COOKING / Regional & Ethnic / General",
-  "COOKING / Vegetarian & Vegan",
-
-  // CRAFTS, HOBBIES & HOME
-  "CRAFTS & HOBBIES / General",
-  "CRAFTS & HOBBIES / Gardening",
-  "CRAFTS & HOBBIES / Needlework / General",
-  "CRAFTS & HOBBIES / Woodworking",
-  "HOUSE & HOME / General",
-  "HOUSE & HOME / Decorating & Furnishing",
-  "HOUSE & HOME / Organizing",
-
-  // EDUCATION, PARENTING & FAMILY
-  "EDUCATION / General",
-  "EDUCATION / Higher",
-  "EDUCATION / Teaching Methods & Materials / General",
-  "FAMILY & RELATIONSHIPS / General",
-  "PARENTING / General",
-  "PARENTING / Child Care",
-  "PARENTING / Child Development",
-
-  // HISTORY, POLITICS & SOCIAL SCIENCES
-  "HISTORY / General",
-  "HISTORY / Ancient / General",
-  "HISTORY / Military / General",
-  "HISTORY / Modern / 20th Century",
-  "HISTORY / Modern / 21st Century",
-  "HISTORY / United States / General",
-  "HISTORY / World",
-  "POLITICAL SCIENCE / General",
-  "POLITICAL SCIENCE / Public Policy / General",
-  "SOCIAL SCIENCE / General",
-  "SOCIAL SCIENCE / Media Studies",
-
-  // PSYCHOLOGY & PHILOSOPHY
-  "PSYCHOLOGY / General",
-  "PSYCHOLOGY / Applied Psychology",
-  "PSYCHOLOGY / Cognitive Psychology & Cognition",
-  "PSYCHOLOGY / Interpersonal Relations",
-  "PHILOSOPHY / General",
-  "PHILOSOPHY / Ethics & Moral Philosophy",
-  "PHILOSOPHY / Mind & Language",
-
-  // RELIGION & SPIRITUALITY
-  "BODY, MIND & SPIRIT / General",
-  "BODY, MIND & SPIRIT / Astrology",
-  "BODY, MIND & SPIRIT / Mindfulness & Meditation",
-  "RELIGION / General",
-  "RELIGION / Christian Life / General",
-  "RELIGION / Inspirational",
-  "RELIGION / Spirituality",
-
-  // ART, MUSIC, PERFORMING ARTS
-  "ART / General",
-  "DESIGN / General",
-  "DESIGN / Graphic Arts",
-  "MUSIC / General",
-  "PHOTOGRAPHY / General",
-
-  // CHILDREN, JUVENILE & YOUNG ADULT
-  "YOUNG ADULT FICTION / General",
-  "YOUNG ADULT FICTION / Fantasy / General",
-  "YOUNG ADULT FICTION / Romance / General",
-  "YOUNG ADULT NONFICTION / General",
-  "JUVENILE FICTION / General",
-  "JUVENILE FICTION / Animals",
-  "JUVENILE NONFICTION / General"
-];
-
-function formatMetadataKeywords(rawKeywords: any): string[] {
-  let list: string[] = [];
-  if (Array.isArray(rawKeywords)) {
-    list = rawKeywords
-      .map((k: any) => (typeof k === 'string' ? k : String(k?.keyword || k?.name || k || '')).trim())
-      .filter(Boolean);
-  } else if (typeof rawKeywords === 'string' && rawKeywords.trim()) {
-    list = rawKeywords
-      .split(/[,;\n]+/)
-      .map((k: string) => k.trim())
-      .filter(Boolean);
-  }
-
-  while (list.length < 7) {
-    list.push('');
-  }
-  return list.slice(0, 7);
-}
-
-function formatMetadataCategories(rawCategories: any): string[] {
-  let list: string[] = [];
-  if (Array.isArray(rawCategories)) {
-    list = rawCategories
-      .map((c: any) => (typeof c === 'string' ? c : String(c?.category || c?.name || c || '')).trim())
-      .filter(Boolean);
-  } else if (typeof rawCategories === 'string' && rawCategories.trim()) {
-    list = rawCategories
-      .split(/[,;\n]+/)
-      .map((c: string) => c.trim())
-      .filter(Boolean);
-  }
-
-  list = list.map((cat: string) => {
-    if (!cat) return '';
-    const exact = BISAC_CATEGORIES.find(b => b.toLowerCase() === cat.toLowerCase());
-    if (exact) return exact;
-
-    const partial = BISAC_CATEGORIES.find(
-      b => b.toLowerCase().includes(cat.toLowerCase()) || cat.toLowerCase().includes(b.toLowerCase())
-    );
-    if (partial) return partial;
-
-    return cat;
-  });
-
-  while (list.length < 3) {
-    list.push('');
-  }
-  return list.slice(0, 3);
-}
 
 export interface AuthorSocials {
   twitter?: string;
@@ -601,11 +315,9 @@ function parseMarkdownToChaptersLocally(rawText: string) {
 
 const generateId = () => Math.random().toString(36).substring(2, 9);
 
-function ChapterView({ chapter, onContentChange, onRegenerate, onHumanize, onDelete, onUndo, canUndo, components }: { chapter: Chapter, onContentChange: (c: string) => void, onRegenerate: () => void, onHumanize?: () => void, onDelete?: () => void, onUndo?: () => void, canUndo?: boolean, components: any }) {
+function ChapterView({ chapter, onContentChange, onRegenerate, onDelete, onUndo, canUndo, components }: { chapter: Chapter, onContentChange: (c: string) => void, onRegenerate: () => void, onDelete?: () => void, onUndo?: () => void, canUndo?: boolean, components: any }) {
   const [isEditing, setIsEditing] = useState(false);
   const isAuthorPage = chapter.title.toLowerCase().includes('about the author');
-
-  const report = useMemo(() => analyzeAiScore(chapter.content), [chapter.content]);
 
   return (
     <div className="space-y-4">
@@ -618,29 +330,6 @@ function ChapterView({ chapter, onContentChange, onRegenerate, onHumanize, onDel
           </div>
         </div>
       )}
-
-      {/* AI Score Mini Alert Bar */}
-      <div className="bg-white px-4 py-2.5 rounded-xl border border-zinc-200 shadow-2xs flex items-center justify-between flex-wrap gap-2 text-xs">
-        <div className="flex items-center gap-3">
-          <span className="font-bold text-zinc-700 uppercase tracking-wider text-[10px]">Manuscript AI Scan:</span>
-          <span className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold ${
-            report.aiProbability > 70 ? 'bg-red-100 text-red-800 border border-red-200' :
-            report.aiProbability > 35 ? 'bg-amber-100 text-amber-800 border border-amber-200' :
-            'bg-emerald-100 text-emerald-800 border border-emerald-200'
-          }`}>
-            {report.aiProbability}% Estimated AI Probability
-          </span>
-          <span className="text-[11px] text-zinc-500 font-medium hidden sm:inline">
-            Burstiness Score: <strong className="text-zinc-800">{report.burstinessScore}/100</strong>
-          </span>
-        </div>
-
-        {report.flaggedBuzzwords.length > 0 && (
-          <span className="text-[11px] text-red-600 font-medium truncate max-w-xs">
-            {report.flaggedBuzzwords.length} AI buzzword(s) found ("{report.flaggedBuzzwords.slice(0, 2).map(f => f.word).join('", "')}")
-          </span>
-        )}
-      </div>
 
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center bg-white px-4 sm:px-6 py-3 rounded-2xl border border-zinc-200 shadow-sm gap-4">
         <div className="flex flex-wrap gap-2 bg-zinc-100 p-1 rounded-xl w-full sm:w-auto">
@@ -667,15 +356,6 @@ function ChapterView({ chapter, onContentChange, onRegenerate, onHumanize, onDel
             >
               <RotateCcw className="w-3.5 h-3.5 text-indigo-600" />
               Regret / Undo
-            </button>
-          )}
-          {onHumanize && (
-            <button
-              onClick={onHumanize}
-              className="flex-1 sm:flex-none justify-center items-center gap-1.5 bg-emerald-50 text-emerald-800 hover:bg-emerald-100 border border-emerald-200 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors shadow-2xs cursor-pointer"
-              title="Humanize prose, fix sentence rhythm burstiness, and remove AI buzzwords"
-            >
-              <Wand2 className="w-3.5 h-3.5 text-emerald-600" /> Humanize & Remove AI Markers
             </button>
           )}
           <button
@@ -900,26 +580,9 @@ export default function App() {
   const [user, setUser] = useState<any>(null);
   const [authChecking, setAuthChecking] = useState(true);
 
-  // Mobile & Sidebar UI state
+  // Mobile UI state
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [mobileRightPanelOpen, setMobileRightPanelOpen] = useState(false);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(() => {
-    try {
-      return localStorage.getItem('manus_sidebar_collapsed') === 'true';
-    } catch (e) {
-      return false;
-    }
-  });
-
-  const toggleSidebarCollapsed = () => {
-    setSidebarCollapsed(prev => {
-      const next = !prev;
-      try {
-        localStorage.setItem('manus_sidebar_collapsed', String(next));
-      } catch (e) {}
-      return next;
-    });
-  };
 
   // Global State
   const [projectId, setProjectId] = useState<string | null>(null);
@@ -944,16 +607,6 @@ export default function App() {
     inspirationImage: null
   });
   const [assets, setAssets] = useState<{coverUrl?: string | null, audioUrl?: string | null, metadata?: any, backCoverContent?: string}>({});
-
-  // Cross-Chapter Cohesion & Editorial Memory State
-  const [continuityMemory, setContinuityMemory] = useState<{
-    learnedRules: LearnedRule[];
-    chapterSummaries: Record<string, string>;
-  }>({
-    learnedRules: [],
-    chapterSummaries: {}
-  });
-  const [showContinuityModal, setShowContinuityModal] = useState<boolean>(false);
 
   // History & Regret (Undo / Redo) State
   const [historyStack, setHistoryStack] = useState<BookSnapshot[]>([]);
@@ -1088,43 +741,9 @@ export default function App() {
   const [activeChapterId, setActiveChapterId] = useState<string | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [generatingStep, setGeneratingStep] = useState('');
-  const chapterAbortControllerRef = useRef<AbortController | null>(null);
-
-  const handleStopGeneration = (targetChapterId?: string) => {
-    if (chapterAbortControllerRef.current) {
-      chapterAbortControllerRef.current.abort();
-      chapterAbortControllerRef.current = null;
-    }
-    setIsGenerating(false);
-    setGeneratingStep('');
-
-    if (targetChapterId) {
-      setChapters(prev => prev.map(c => {
-        if (c.id === targetChapterId) {
-          return { ...c, status: c.content && c.content.trim() ? 'done' : 'idle' };
-        }
-        return c;
-      }));
-    } else {
-      setChapters(prev => prev.map(c => {
-        if (c.status === 'generating') {
-          return { ...c, status: c.content && c.content.trim() ? 'done' : 'idle' };
-        }
-        return c;
-      }));
-    }
-
-    setHistoryNotice('AI generation stopped.');
-    setTimeout(() => setHistoryNotice(null), 3000);
-  };
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [customApiKey, setCustomApiKey] = useState('');
-  const DEFAULT_ELEVENLABS_KEY = 'sk_716bc2b43a089a12f75c4a3be97c723e0aad0cbcd33cd90a';
-  const [elevenLabsApiKey, setElevenLabsApiKey] = useState<string>(() => {
-    return localStorage.getItem('elevenlabs_api_key') || DEFAULT_ELEVENLABS_KEY;
-  });
-  const [descViewTab, setDescViewTab] = useState<'formatted' | 'html'>('formatted');
-  const [showCoverTextOverlay, setShowCoverTextOverlay] = useState<boolean>(false);
+  const [showCoverTextOverlay, setShowCoverTextOverlay] = useState<boolean>(true);
   const [showCoverEditor, setShowCoverEditor] = useState<boolean>(false);
   const [coverSaveNotice, setCoverSaveNotice] = useState<boolean>(false);
   const [coverTextPosition, setCoverTextPosition] = useState<'top' | 'middle' | 'bottom'>('top');
@@ -1135,18 +754,11 @@ export default function App() {
   const [backBgColor, setBackBgColor] = useState<string>('#18181b');
   const [spinePageCount, setSpinePageCount] = useState<number>(220);
   const [showBarcodeOnBack, setShowBarcodeOnBack] = useState<boolean>(true);
-  const [pdfIncludeHyperlinks, setPdfIncludeHyperlinks] = useState<boolean>(false);
   const [imageBag, setImageBag] = useState<Record<string, string>>({});
   const [mockIsbn, setMockIsbn] = useState<string | null>(null);
 
-  // Global Command Palette, Help Drawer & Studio Subtabs
-  const [commandPaletteOpen, setCommandPaletteOpen] = useState<boolean>(false);
-  const [helpDrawerOpen, setHelpDrawerOpen] = useState<boolean>(false);
-  const [assetsSubTab, setAssetsSubTab] = useState<'export' | 'cover' | 'price_royalty'>('export');
-
   // Marketing & PR Studio State
-  const [marketingSubTab, setMarketingSubTab] = useState<'press_release' | 'beta_readers' | 'audiobook_script' | 'social_campaign' | 'email_sequence' | 'media_pitch' | 'landing_page' | 'strategy_roadmap'>('press_release');
-
+  const [marketingSubTab, setMarketingSubTab] = useState<'press_release' | 'social_campaign' | 'email_sequence' | 'media_pitch' | 'landing_page' | 'strategy_roadmap'>('press_release');
   const [pressReleaseContent, setPressReleaseContent] = useState<string>('');
   const [targetAudienceInput, setTargetAudienceInput] = useState<string>('');
   const [launchDateInput, setLaunchDateInput] = useState<string>('FOR IMMEDIATE RELEASE');
@@ -1351,8 +963,7 @@ export default function App() {
       chapters,
       assets,
       bookDetails,
-      chats,
-      continuityMemory
+      chats
     };
 
     saveEmergencySnapshot(currentData);
@@ -1363,7 +974,7 @@ export default function App() {
     }, 1500);
 
     return () => clearTimeout(saveTimer);
-  }, [idea, category, research, outline, chapters, assets, bookDetails, chats, continuityMemory, projectId, user]);
+  }, [idea, category, research, outline, chapters, assets, bookDetails, chats, projectId, user]);
 
   const handleOpenRecoveryModal = () => {
     const backups = scanAllLocalBackups();
@@ -1396,26 +1007,21 @@ export default function App() {
     setMdImportNotice(null);
   };
 
-  const handleFileUploadMd = async (e: ChangeEvent<HTMLInputElement>) => {
+  const handleFileUploadMd = (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
     setMdFileName(file.name);
-    setIsProcessingMd(true);
-    setMdImportNotice(`Extracting text from "${file.name}"...`);
-    try {
-      const text = await extractTextFromFile(file);
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const text = (ev.target?.result as string) || '';
       setMdRawText(text);
       const parsed = parseMarkdownToChaptersLocally(text);
       setMdParsedPreview(parsed);
       const wordCount = text.split(/\s+/).filter(Boolean).length;
       setMdImportNotice(`Successfully loaded "${file.name}" (${wordCount.toLocaleString()} words). Found ${parsed.chapters.length} chapters.`);
-    } catch (err: any) {
-      console.error("Error reading manuscript file:", err);
-      setMdImportNotice(`Error reading "${file.name}": ` + (err.message || "Unknown error"));
-    } finally {
-      setIsProcessingMd(false);
-    }
+    };
+    reader.readAsText(file);
   };
 
   const handleProcessMdManuscript = async (useAI: boolean) => {
@@ -1504,8 +1110,22 @@ export default function App() {
     optimizeMetadata(promptContent, customApiKey, bookDetails.language || 'English')
       .then(meta => {
         if (meta) {
-          const keywords = formatMetadataKeywords(meta.keywords);
-          const categories = formatMetadataCategories(meta.categories);
+          const mappedCategories = (meta.categories || []).map((c: string) => {
+            if (c.includes("FICTION")) {
+              if (c.includes("Fantasy")) return "FICTION / Fantasy / Epic";
+              if (c.includes("Mystery")) return "FICTION / Mystery & Detective / General";
+              if (c.includes("Romance")) return "FICTION / Romance / Contemporary";
+              if (c.includes("Science Fiction") || c.includes("Sci-Fi")) return "FICTION / Science Fiction / General";
+              if (c.includes("Thriller")) return "FICTION / Thrillers / Suspense";
+              return "FICTION / General";
+            }
+            if (c.includes("Business")) return "NON-FICTION / Business & Economics / General";
+            if (c.includes("Health") || c.includes("Fitness")) return "NON-FICTION / Health & Fitness / General";
+            if (c.includes("Self-Help")) return "NON-FICTION / Self-Help / General";
+            if (c.includes("Tech") || c.includes("Computer")) return "NON-FICTION / Technology / General";
+            if (c.includes("Education")) return "NON-FICTION / Education / General";
+            return "NON-FICTION / General";
+          });
 
           setBookDetails(prev => ({
             ...prev,
@@ -1513,8 +1133,8 @@ export default function App() {
             subtitle: prev.subtitle || meta.subtitle || '',
             authorName: prev.authorName || meta.author_name || user?.displayName || '',
             description: prev.description || meta.description_html || '',
-            keywords,
-            categories,
+            keywords: prev.keywords.length > 0 ? prev.keywords : (meta.keywords || []),
+            categories: prev.categories.length > 0 ? prev.categories : (mappedCategories.length > 0 ? mappedCategories : []),
             pricing: prev.pricing || meta.suggested_price || '$9.99',
             trimSize: prev.trimSize || meta.trim_size || '6x9',
             metadata: meta
@@ -1582,11 +1202,6 @@ export default function App() {
     }
     setAssets(data.assets || {});
     setChats(data.chats || {});
-    if (data.continuityMemory) {
-      setContinuityMemory(data.continuityMemory);
-    } else {
-      setContinuityMemory({ learnedRules: [], chapterSummaries: {} });
-    }
     setViewMode('setup');
   };
 
@@ -1637,14 +1252,10 @@ export default function App() {
       }
 
       if (sourceFiles.length > 0) {
-        setGeneratingStep('Extracting reference documents...');
+        setGeneratingStep('Reading files...');
         for (const file of sourceFiles) {
-          try {
-            const text = await extractTextFromFile(file);
-            context += `\n\n--- Content from file: ${file.name} ---\n${text.substring(0, 20000)}`;
-          } catch (err) {
-            console.warn(`Failed to extract text from ${file.name}`, err);
-          }
+          const text = await file.text();
+          context += `\n\n--- Content from file: ${file.name} ---\n${text.substring(0, 15000)}`;
         }
       }
 
@@ -1656,14 +1267,6 @@ export default function App() {
       setGeneratingStep('Researching niche...');
       const res = await researchNiche(fullIdea, customApiKey);
       setResearch(res);
-
-      if (res && Array.isArray(res.top_keywords) && res.top_keywords.length > 0) {
-        const initialKw = formatMetadataKeywords(res.top_keywords);
-        setBookDetails(prev => ({
-          ...prev,
-          keywords: prev.keywords.some(k => k.trim()) ? prev.keywords : initialKw
-        }));
-      }
       
       setGeneratingStep('Generating outline...');
       const languagePrompt = bookDetails.language ? `\n\nCRITICAL: You MUST write the entire outline in ${bookDetails.language}. All chapter titles and bullet points MUST be in ${bookDetails.language}.` : '';
@@ -1711,12 +1314,6 @@ export default function App() {
     const chapter = chapters.find(c => c.id === chapterId);
     if (!chapter) return;
 
-    if (chapterAbortControllerRef.current) {
-      chapterAbortControllerRef.current.abort();
-    }
-    const abortController = new AbortController();
-    chapterAbortControllerRef.current = abortController;
-
     pushHistorySnapshot(`Before generating ${chapter.title}`);
     setChapters(prev => prev.map(c => c.id === chapterId ? { ...c, status: 'generating' } : c));
     
@@ -1730,96 +1327,30 @@ export default function App() {
           combinedPrompt += `\n\nCRITICAL: The entire chapter MUST be written in ${bookDetails.language}. Do not use English unless quoting or if strictly necessary.`;
       }
 
-      // Build cross-chapter continuity context
-      const chIndex = chapters.findIndex(c => c.id === chapterId);
-      const preceding = chIndex > 0 ? chapters.slice(0, chIndex) : [];
-      const precedingSummaries = preceding
-        .filter(c => c.content && c.content.trim())
-        .map(c => continuityMemory.chapterSummaries[c.id] || `Chapter "${c.title}" progressed the storyline/argument.`);
-      
-      const prevCh = chIndex > 0 ? chapters[chIndex - 1] : null;
-      const prevEnding = prevCh?.content ? prevCh.content.trim().substring(Math.max(0, prevCh.content.trim().length - 1200)) : '';
-
-      const continuityCtx: ContinuityContext = {
-        precedingChapterSummaries: precedingSummaries,
-        previousChapterEnding: prevEnding,
-        learnedRules: continuityMemory.learnedRules
-      };
-
       const effectiveTopic = (idea && idea.trim()) || (bookDetails?.title && bookDetails.title.trim()) || bookDetails?.description || 'the manuscript topic';
-      const content = await generateChapter(
-        effectiveTopic, 
-        outline, 
-        chapter.title, 
-        customApiKey, 
-        combinedPrompt,
-        abortController.signal,
-        continuityCtx
-      );
-
-      if (abortController.signal.aborted) {
-        setChapters(prev => prev.map(c => c.id === chapterId ? { ...c, status: c.content && c.content.trim() ? 'done' : 'idle' } : c));
-        return;
-      }
-
+      const content = await generateChapter(effectiveTopic, outline, chapter.title, customApiKey, combinedPrompt);
       setChapters(prev => prev.map(c => c.id === chapterId ? { ...c, content, status: 'done' } : c));
-
-      // Asynchronously generate & cache continuity summary for this chapter
-      summarizeChapterForContinuity(chapter.title, content, customApiKey)
-        .then((summary) => {
-          if (summary) {
-            setContinuityMemory(prev => ({
-              ...prev,
-              chapterSummaries: {
-                ...prev.chapterSummaries,
-                [chapterId]: summary
-              }
-            }));
-          }
-        })
-        .catch(err => console.warn("Continuity summary error:", err));
     } catch (e: any) {
-      if (abortController.signal.aborted || e.message?.includes('cancelled')) {
-        console.log("Chapter generation cancelled by user.");
-        setChapters(prev => prev.map(c => c.id === chapterId ? { ...c, status: c.content && c.content.trim() ? 'done' : 'idle' } : c));
-      } else {
-        console.error("Chapter generation error:", e);
-        setChapters(prev => prev.map(c => c.id === chapterId ? { ...c, status: c.content && c.content.trim() ? 'done' : 'idle' } : c));
-        alert("Chapter generation stopped or failed: " + (e.message || "Unknown error") + "\n\nTip: You can click 'Re-generate' anytime to restart AI generation.");
-      }
-    } finally {
-      if (chapterAbortControllerRef.current === abortController) {
-        chapterAbortControllerRef.current = null;
-      }
+      console.error(e);
+      setChapters(prev => prev.map(c => c.id === chapterId ? { ...c, status: 'idle' } : c));
+      alert("Failed to generate chapter: " + (e.message || "Unknown error"));
     }
   };
 
   const handleGenerateAllChapters = async (overwrite: boolean = false) => {
     const targets = overwrite ? chapters : chapters.filter(c => c.status === 'idle');
     if (!targets.length) return;
-
-    if (chapterAbortControllerRef.current) {
-      chapterAbortControllerRef.current.abort();
-    }
-    const abortController = new AbortController();
-    chapterAbortControllerRef.current = abortController;
-
     setIsGenerating(true);
     
+    // We process sequentially to avoid rate limits
     for (let i = 0; i < targets.length; i++) {
-        if (abortController.signal.aborted) {
-          break;
-        }
         const chap = targets[i];
-        setGeneratingStep(`Writing chapter ${i + 1} of ${targets.length}: "${chap.title}"...`);
+        setGeneratingStep(`Writing chapter ${i + 1} of ${targets.length}...`);
         await handleGenerateChapter(chap.id);
     }
     
     setIsGenerating(false);
     setGeneratingStep('');
-    if (chapterAbortControllerRef.current === abortController) {
-      chapterAbortControllerRef.current = null;
-    }
   };
 
   const handleExtractStyle = async () => {
@@ -1912,37 +1443,6 @@ export default function App() {
     }
   };
 
-  const handleInsertTocChapter = (tocMarkdown: string) => {
-    pushHistorySnapshot("Inserted Table of Contents Chapter");
-
-    // Check if a TOC chapter already exists
-    const existingIndex = chapters.findIndex(c => 
-      c.title.toLowerCase().includes('table of contents') || 
-      c.title.toLowerCase().includes('contents')
-    );
-
-    if (existingIndex !== -1) {
-      setChapters(prev => prev.map((c, idx) => {
-        if (idx === existingIndex) {
-          return { ...c, content: tocMarkdown, status: 'done' as const };
-        }
-        return c;
-      }));
-    } else {
-      // Place as Front Matter right at top
-      const tocChapter: Chapter = {
-        id: generateId(),
-        title: "Table of Contents",
-        content: tocMarkdown,
-        status: 'done' as const
-      };
-      setChapters(prev => [tocChapter, ...prev]);
-    }
-
-    setHistoryNotice("Table of Contents synchronized with book workspace!");
-    setTimeout(() => setHistoryNotice(null), 3500);
-  };
-
   const handleExportDocx = async () => {
     setIsGenerating(true);
     setGeneratingStep('manus AI: Formatting Manuscript for Amazon KDP (.docx)...');
@@ -1959,456 +1459,6 @@ export default function App() {
       setIsGenerating(false);
       setGeneratingStep('');
     }
-  };
-
-  const handlePrintPdf = () => {
-    if (chapters.length === 0) {
-      alert("No written chapters in manuscript to export as PDF.");
-      return;
-    }
-
-    // Filter out meta-chapters like 'Table of Contents' or 'Contents' to avoid duplicate TOC pages
-    const contentChapters = chapters.filter(ch => {
-      const t = ch.title.toLowerCase().trim();
-      return !t.includes('table of contents') && t !== 'contents';
-    });
-
-    if (contentChapters.length === 0) {
-      alert("No story chapters to export.");
-      return;
-    }
-
-    const printWindow = window.open('', '_blank');
-    if (!printWindow) {
-      alert("Please allow popups in your browser to open the Print/PDF view.");
-      return;
-    }
-
-    const title = bookDetails.title || assets.metadata?.title || 'Untitled Manuscript';
-    const author = bookDetails.authorName || user?.displayName || 'Author';
-    const subtitle = bookDetails.subtitle || assets.metadata?.subtitle || '';
-    const currentYear = new Date().getFullYear();
-
-    const getCleanChapterTitle = (rawTitle: string, index: number) => {
-      if (!rawTitle) return `Chapter ${index}`;
-      const trimmed = rawTitle.trim();
-      const lower = trimmed.toLowerCase();
-      
-      if (
-        lower.startsWith('about the author') ||
-        lower.startsWith('table of contents') ||
-        lower.startsWith('contents') ||
-        lower.startsWith('introduction') ||
-        lower.startsWith('foreword') ||
-        lower.startsWith('preface') ||
-        lower.startsWith('prologue') ||
-        lower.startsWith('epilogue') ||
-        lower.startsWith('acknowledgments')
-      ) {
-        return trimmed;
-      }
-      
-      if (/^chapter\s+\d+/i.test(trimmed)) {
-        return trimmed;
-      }
-      
-      return `Chapter ${index}: ${trimmed}`;
-    };
-
-    const formatContentToBookHtml = (content: string) => {
-      if (!content) return '<p class="empty-ch">No text written for this chapter yet.</p>';
-      
-      const blocks = content.split(/\n\n+/);
-      return blocks.map((block) => {
-        const trimmed = block.trim();
-        if (!trimmed) return '';
-        if (trimmed.startsWith('### ')) {
-          return `<h3 class="ch-h3">${trimmed.replace(/^###\s+/, '')}</h3>`;
-        }
-        if (trimmed.startsWith('## ')) {
-          return `<h2 class="ch-h2">${trimmed.replace(/^##\s+/, '')}</h2>`;
-        }
-        if (trimmed.startsWith('# ')) {
-          return `<h2 class="ch-h2">${trimmed.replace(/^#\s+/, '')}</h2>`;
-        }
-        if (trimmed.startsWith('- ') || trimmed.startsWith('* ')) {
-          const items = trimmed.split('\n').map(item => `<li>${item.replace(/^[-*]\s+/, '')}</li>`).join('');
-          return `<ul class="ch-list">${items}</ul>`;
-        }
-        
-        const cleanP = trimmed
-          .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-          .replace(/\*(.*?)\*/g, '<em>$1</em>')
-          .replace(/_(.*?)_/g, '<em>$1</em>')
-          .replace(/\n/g, '<br/>');
-          
-        return `<p class="ch-p">${cleanP}</p>`;
-      }).join('\n');
-    };
-
-    const htmlContent = `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <title>${title} — Formatted Manuscript Interior PDF</title>
-  <style>
-    @page {
-      size: 6in 9in;
-      margin: 0.75in 0.65in 0.75in 0.75in;
-    }
-    @media print {
-      body {
-        -webkit-print-color-adjust: exact;
-        background: #ffffff !important;
-        color: #000000 !important;
-      }
-      .no-print {
-        display: none !important;
-      }
-      .manuscript-paper {
-        box-shadow: none !important;
-        border: none !important;
-        padding: 0 !important;
-        margin: 0 !important;
-        max-width: 100% !important;
-      }
-    }
-    * {
-      box-sizing: border-box;
-    }
-    body {
-      font-family: "Georgia", "Garamond", "Baskerville", "Times New Roman", serif;
-      font-size: 11pt;
-      line-height: 1.6;
-      color: #111111;
-      background: #f1f5f9;
-      margin: 0;
-      padding: 0;
-    }
-    
-    .print-banner {
-      background: #0f172a;
-      color: #ffffff;
-      padding: 16px 24px;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      font-family: system-ui, -apple-system, sans-serif;
-      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
-      position: sticky;
-      top: 0;
-      z-index: 1000;
-    }
-    .print-btn {
-      background: #10b981;
-      color: #ffffff;
-      border: none;
-      padding: 10px 20px;
-      font-size: 14px;
-      font-weight: 700;
-      border-radius: 8px;
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      transition: background 0.2s;
-    }
-    .print-btn:hover {
-      background: #059669;
-    }
-    .link-option-label {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      font-size: 13px;
-      cursor: pointer;
-      user-select: none;
-      background: #1e293b;
-      padding: 6px 12px;
-      border-radius: 6px;
-      border: 1px solid #334155;
-    }
-    .link-option-label:hover {
-      background: #334155;
-    }
-    
-    .manuscript-paper {
-      max-width: 6.5in;
-      background: #ffffff;
-      margin: 30px auto;
-      padding: 0.75in;
-      box-shadow: 0 10px 25px -5px rgba(0,0,0,0.1), 0 8px 10px -6px rgba(0,0,0,0.1);
-      border: 1px solid #cbd5e1;
-      border-radius: 6px;
-    }
-
-    /* Title Page */
-    .title-page {
-      page-break-after: always;
-      break-after: page;
-      text-align: center;
-      padding-top: 2.2in;
-      min-height: 7.5in;
-    }
-    .book-title {
-      font-size: 26pt;
-      font-weight: bold;
-      line-height: 1.25;
-      margin-bottom: 0.25in;
-      font-family: "Georgia", serif;
-      letter-spacing: -0.5px;
-    }
-    .book-subtitle {
-      font-size: 13pt;
-      font-style: italic;
-      color: #475569;
-      margin-bottom: 2.2in;
-      line-height: 1.4;
-    }
-    .book-author {
-      font-size: 13pt;
-      font-weight: bold;
-      text-transform: uppercase;
-      letter-spacing: 1.5px;
-      color: #1e293b;
-    }
-    
-    /* Copyright Page */
-    .copyright-page {
-      page-break-after: always;
-      break-after: page;
-      font-size: 9.5pt;
-      line-height: 1.5;
-      color: #475569;
-      padding-top: 3.8in;
-      min-height: 7.5in;
-    }
-    .copyright-page p {
-      text-indent: 0 !important;
-      margin-bottom: 0.8em;
-    }
-
-    /* Table of Contents */
-    .toc-page {
-      page-break-after: always;
-      break-after: page;
-      padding-top: 0.6in;
-      min-height: 7.5in;
-    }
-    .toc-header {
-      text-align: center;
-      font-size: 16pt;
-      font-weight: bold;
-      text-transform: uppercase;
-      letter-spacing: 2px;
-      margin-bottom: 1.2in;
-      font-family: "Georgia", serif;
-    }
-    .toc-row {
-      display: flex;
-      align-items: baseline;
-      justify-content: space-between;
-      margin-bottom: 0.8em;
-      font-size: 11pt;
-    }
-    .toc-title {
-      font-weight: 500;
-      color: #0f172a;
-    }
-    .toc-link {
-      color: #0f172a;
-      text-decoration: underline;
-      text-underline-offset: 3px;
-      text-decoration-color: #94a3b8;
-      transition: color 0.2s;
-    }
-    .toc-link:hover {
-      color: #2563eb;
-      text-decoration-color: #2563eb;
-    }
-    .toc-dots {
-      flex: 1;
-      border-bottom: 1px dotted #cbd5e1;
-      margin: 0 8px;
-    }
-
-    /* Chapter Interior Styling */
-    .chapter-block {
-      page-break-before: always;
-      break-before: page;
-      padding-top: 0.5in;
-    }
-    .chapter-heading-container {
-      text-align: center;
-      margin-top: 1in;
-      margin-bottom: 1.2in;
-    }
-    .chapter-number-label {
-      font-size: 10pt;
-      font-weight: bold;
-      text-transform: uppercase;
-      letter-spacing: 3px;
-      color: #64748b;
-      margin-bottom: 0.15in;
-    }
-    .chapter-main-title {
-      font-size: 20pt;
-      font-weight: bold;
-      line-height: 1.3;
-      font-family: "Georgia", serif;
-      color: #0f172a;
-    }
-    
-    .ch-p {
-      text-indent: 1.5em;
-      margin-top: 0;
-      margin-bottom: 0;
-      text-align: justify;
-    }
-    .ch-p:first-of-type,
-    .ch-h2 + .ch-p,
-    .ch-h3 + .ch-p,
-    .empty-ch {
-      text-indent: 0 !important;
-    }
-    .ch-h2 {
-      font-size: 13pt;
-      font-weight: bold;
-      text-align: center;
-      margin-top: 1.8em;
-      margin-bottom: 0.6em;
-      font-family: "Georgia", serif;
-    }
-    .ch-h3 {
-      font-size: 11pt;
-      font-weight: bold;
-      margin-top: 1.4em;
-      margin-bottom: 0.4em;
-    }
-    .ch-list {
-      margin: 0.8em 0 0.8em 1.5em;
-      padding: 0;
-    }
-    .ch-list li {
-      margin-bottom: 0.3em;
-    }
-    
-    .author-page {
-      page-break-before: always;
-      break-before: page;
-      padding-top: 0.8in;
-    }
-  </style>
-</head>
-<body>
-  <div class="print-banner no-print">
-    <div>
-      <div style="font-weight: 700; font-size: 15px;">Print Ready Manuscript PDF Export</div>
-      <div style="font-size: 12px; color: #94a3b8; margin-top: 2px;">
-        Formatted 6x9 Trade Paperback Interior. Select "Save as PDF" in print settings.
-      </div>
-    </div>
-    
-    <div style="display: flex; align-items: center; gap: 16px;">
-      <label class="link-option-label">
-        <input type="checkbox" id="tocLinkToggle" ${pdfIncludeHyperlinks ? 'checked' : ''} onchange="toggleTocLinks(this.checked)" style="cursor: pointer; width: 16px; height: 16px;">
-        <span>Clickable TOC Links</span>
-      </label>
-      <button class="print-btn" onclick="window.print()">
-        🖨️ Save as PDF / Print
-      </button>
-    </div>
-  </div>
-
-  <div class="manuscript-paper">
-    <!-- Title Page -->
-    <div class="title-page">
-      <div class="book-title">${title}</div>
-      ${subtitle ? `<div class="book-subtitle">${subtitle}</div>` : ''}
-      <div class="book-author">${author}</div>
-    </div>
-
-    <!-- Copyright Page -->
-    <div class="copyright-page">
-      <p>Copyright © ${currentYear} by ${author}</p>
-      <p>All rights reserved. No part of this publication may be reproduced, distributed, or transmitted in any form or by any means, including photocopying, recording, or other electronic or mechanical methods, without the prior written permission of the publisher, except in the case of brief quotations embodied in critical reviews and certain other noncommercial uses permitted by copyright law.</p>
-      ${bookDetails.pricing ? `<p style="margin-top: 1.5em;">Suggested Retail Price: ${bookDetails.pricing}</p>` : ''}
-      <p style="margin-top: 1.5em;">First Printing, ${currentYear}</p>
-    </div>
-
-    <!-- Table of Contents -->
-    <div class="toc-page">
-      <div class="toc-header">Contents</div>
-      ${contentChapters.map((ch, idx) => {
-        const cleanTitle = getCleanChapterTitle(ch.title, idx + 1);
-        const anchor = `chapter-${idx + 1}`;
-        return `
-          <div class="toc-row">
-            <span class="toc-title-slot" data-title="${cleanTitle.replace(/"/g, '&quot;')}" data-anchor="${anchor}">
-              ${pdfIncludeHyperlinks ? `<a href="#${anchor}" class="toc-title toc-link">${cleanTitle}</a>` : `<span class="toc-title">${cleanTitle}</span>`}
-            </span>
-            <span class="toc-dots"></span>
-          </div>
-        `;
-      }).join('')}
-    </div>
-
-    <!-- Chapter Interiors -->
-    ${contentChapters.map((ch, idx) => {
-      const cleanTitle = getCleanChapterTitle(ch.title, idx + 1);
-      const isNamedChapter = ch.title.toLowerCase().startsWith('chapter') || ch.title.toLowerCase().includes('author') || ch.title.toLowerCase().includes('introduction') || ch.title.toLowerCase().includes('prologue');
-      return `
-        <div class="chapter-block" id="chapter-${idx + 1}">
-          <div class="chapter-heading-container">
-            ${!isNamedChapter ? `<div class="chapter-number-label">Chapter ${idx + 1}</div>` : ''}
-            <div class="chapter-main-title">${cleanTitle}</div>
-          </div>
-          <div class="chapter-body">
-            ${formatContentToBookHtml(ch.content)}
-          </div>
-        </div>
-      `;
-    }).join('')}
-
-    <!-- About Author Section if set -->
-    ${bookDetails.aboutAuthor ? `
-      <div class="author-page" id="chapter-author">
-        <div class="chapter-heading-container">
-          <div class="chapter-main-title">About the Author</div>
-        </div>
-        <div class="chapter-body">
-          ${formatContentToBookHtml(bookDetails.aboutAuthor)}
-        </div>
-      </div>
-    ` : ''}
-  </div>
-
-  <script>
-    function toggleTocLinks(enabled) {
-      var slots = document.querySelectorAll('.toc-title-slot');
-      slots.forEach(function(slot) {
-        var title = slot.getAttribute('data-title');
-        var anchor = slot.getAttribute('data-anchor');
-        if (enabled) {
-          slot.innerHTML = '<a href="#' + anchor + '" class="toc-title toc-link">' + title + '</a>';
-        } else {
-          slot.innerHTML = '<span class="toc-title">' + title + '</span>';
-        }
-      });
-    }
-
-    window.onload = function() {
-      setTimeout(function() {
-        window.print();
-      }, 500);
-    };
-  </script>
-</body>
-</html>`;
-
-    printWindow.document.open();
-    printWindow.document.write(htmlContent);
-    printWindow.document.close();
   };
 
   const handleExportPublishingZip = async () => {
@@ -2439,26 +1489,16 @@ export default function App() {
 
     try {
       setGeneratingStep('Creating Amazon KDP metadata...');
-      const fullBookContext = [
-        bookDetails.title ? `Title: ${bookDetails.title}` : '',
-        bookDetails.subtitle ? `Subtitle: ${bookDetails.subtitle}` : '',
-        bookDetails.description ? `Description: ${bookDetails.description}` : '',
-        idea ? `Idea: ${idea}` : '',
-        outline ? `Outline:\n${outline}` : '',
-        chapters.length > 0 ? `Chapters:\n${chapters.map((c, i) => `${i + 1}. ${c.title}`).join('\n')}` : ''
-      ].filter(Boolean).join('\n\n') || idea || 'Manuscript';
-
-      meta = await optimizeMetadata(fullBookContext, customApiKey, bookDetails.language || 'English');
+      meta = await optimizeMetadata(idea, customApiKey);
       if (meta) {
-        const generatedKw = formatMetadataKeywords(meta.keywords);
         setBookDetails(prev => ({
           ...prev,
           title: prev.title || meta.title || '',
           subtitle: prev.subtitle || meta.subtitle || '',
           authorName: prev.authorName || meta.author_name || '',
           description: prev.description || meta.description_html || '',
-          keywords: prev.keywords.some(k => k.trim()) ? prev.keywords : generatedKw,
-          categories: prev.categories.some(c => c.trim()) ? prev.categories : formatMetadataCategories(meta.categories),
+          keywords: prev.keywords.length > 0 ? prev.keywords : (meta.keywords || []),
+          categories: prev.categories.length > 0 ? prev.categories : (meta.categories || []),
           pricing: prev.pricing || meta.suggested_price || '$9.99',
           trimSize: prev.trimSize || meta.trim_size || '6x9',
           metadata: meta
@@ -2652,7 +1692,7 @@ export default function App() {
     ctx.restore();
   };
 
-  const handleDownloadCanvasPng = async (mode: 'front' | 'back' | 'wrap' | 'acx') => {
+  const handleDownloadCanvasPng = async (mode: 'front' | 'back' | 'wrap') => {
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
@@ -2663,10 +1703,9 @@ export default function App() {
     const authorText = bookDetails.authorName || user?.displayName || 'Author Name';
     const blurbText = assets.backCoverContent || bookDetails.description || 'A compelling narrative crafted with manus AI.';
 
-    if (mode === 'acx') {
-      // ACX Audible Audiobook Cover Standard: 2400 x 2400 px @ 300 DPI (1:1 Square)
-      canvas.width = 2400;
-      canvas.height = 2400;
+    if (mode === 'front') {
+      canvas.width = 1200;
+      canvas.height = 1800;
 
       ctx.fillStyle = backBgColor || '#18181b';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -2694,67 +1733,22 @@ export default function App() {
         ctx.fillStyle = '#ffffff';
         ctx.textAlign = 'center';
 
-        ctx.font = 'bold 110px serif';
-        fillWrappedCanvasText(ctx, titleText.toUpperCase(), 1200, 380, 2100, 130);
+        ctx.font = 'bold 72px sans-serif';
+        fillWrappedCanvasText(ctx, titleText.toUpperCase(), 600, 240, 1000, 85);
 
         if (subtitleText) {
-          ctx.font = 'italic 54px sans-serif';
-          fillWrappedCanvasText(ctx, subtitleText, 1200, 780, 2000, 72);
+          ctx.font = 'italic 36px sans-serif';
+          fillWrappedCanvasText(ctx, subtitleText, 600, 520, 1000, 48);
         }
 
-        ctx.font = 'bold 68px sans-serif';
-        ctx.fillText(authorText.toUpperCase(), 1200, 2100);
+        ctx.font = 'bold 42px serif';
+        ctx.fillText(authorText.toUpperCase(), 600, 1600);
       }
 
-      downloadBase64(canvas.toDataURL('image/jpeg', 0.98), `${titleText.toLowerCase().replace(/\s+/g, '_')}_ACX_Audiobook_Cover_2400x2400.jpg`);
-    } else if (mode === 'front') {
-      // Amazon KDP Kindle eBook Cover Standard: 1600 x 2560 px (1:1.6 aspect ratio @ 300 DPI)
-      canvas.width = 1600;
-      canvas.height = 2560;
-
-      ctx.fillStyle = backBgColor || '#18181b';
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-      if (assets.coverUrl) {
-        await new Promise<void>((resolve) => {
-          const img = new Image();
-          img.crossOrigin = 'anonymous';
-          img.onload = () => {
-            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-            resolve();
-          };
-          img.onerror = () => resolve();
-          img.src = assets.coverUrl!;
-        });
-      }
-
-      if (showCoverTextOverlay) {
-        if (coverOverlayDarkness !== 'none') {
-          const opacity = coverOverlayDarkness === 'subtle' ? 0.25 : coverOverlayDarkness === 'dark' ? 0.65 : 0.45;
-          ctx.fillStyle = `rgba(0, 0, 0, ${opacity})`;
-          ctx.fillRect(0, 0, canvas.width, canvas.height);
-        }
-
-        ctx.fillStyle = '#ffffff';
-        ctx.textAlign = 'center';
-
-        ctx.font = 'bold 96px sans-serif';
-        fillWrappedCanvasText(ctx, titleText.toUpperCase(), 800, 320, 1380, 110);
-
-        if (subtitleText) {
-          ctx.font = 'italic 48px sans-serif';
-          fillWrappedCanvasText(ctx, subtitleText, 800, 700, 1380, 64);
-        }
-
-        ctx.font = 'bold 56px serif';
-        ctx.fillText(authorText.toUpperCase(), 800, 2280);
-      }
-
-      downloadBase64(canvas.toDataURL('image/jpeg', 0.95), `${titleText.toLowerCase().replace(/\s+/g, '_')}_KDP_Kindle_eBook_Cover_1600x2560.jpg`);
+      downloadBase64(canvas.toDataURL('image/png'), `${titleText.toLowerCase().replace(/\s+/g, '_')}_front_cover.png`);
     } else if (mode === 'back') {
-      // Amazon KDP 300 DPI Back Cover: 1800 x 2700 px (6x9 in)
-      canvas.width = 1800;
-      canvas.height = 2700;
+      canvas.width = 1200;
+      canvas.height = 1800;
 
       ctx.fillStyle = backBgColor || '#18181b';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -2762,220 +1756,209 @@ export default function App() {
       ctx.fillStyle = '#ffffff';
       ctx.textAlign = 'center';
 
-      ctx.font = 'bold 78px sans-serif';
-      fillWrappedCanvasText(ctx, titleText.toUpperCase(), 900, 260, 1500, 96);
+      ctx.font = 'bold 54px sans-serif';
+      fillWrappedCanvasText(ctx, titleText.toUpperCase(), 600, 180, 1040, 68);
 
       if (subtitleText) {
-        ctx.font = 'italic 42px sans-serif';
+        ctx.font = 'italic 30px sans-serif';
         ctx.fillStyle = '#e4e4e7';
-        fillWrappedCanvasText(ctx, subtitleText, 900, 480, 1400, 58);
+        fillWrappedCanvasText(ctx, subtitleText, 600, 320, 1000, 42);
       }
 
       ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
-      ctx.lineWidth = 3;
+      ctx.lineWidth = 2;
       ctx.beginPath();
-      ctx.moveTo(300, 580);
-      ctx.lineTo(1500, 580);
+      ctx.moveTo(200, 380);
+      ctx.lineTo(1000, 380);
       ctx.stroke();
 
       ctx.fillStyle = '#f4f4f5';
-      ctx.font = '38px sans-serif';
+      ctx.font = '28px sans-serif';
       ctx.textAlign = 'left';
-      fillWrappedCanvasText(ctx, blurbText, 180, 680, 1440, 60);
+      fillWrappedCanvasText(ctx, blurbText, 120, 450, 960, 44);
 
       if (showBarcodeOnBack) {
-        // Amazon KDP barcode safety box: 600 x 360 px @ 300 DPI
-        drawBarcodeOnCanvas(ctx, currentIsbn, 1100, 2200, 550, 320);
+        drawBarcodeOnCanvas(ctx, currentIsbn, 820, 1500, 260, 180);
       }
 
       ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
-      ctx.font = 'bold 28px sans-serif';
+      ctx.font = 'bold 20px sans-serif';
       ctx.textAlign = 'left';
-      ctx.fillText("PUBLISHED WITH MANUS AI", 180, 2480);
+      ctx.fillText("PUBLISHED WITH MANUS AI", 120, 1680);
 
-      downloadBase64(canvas.toDataURL('image/png'), `${titleText.toLowerCase().replace(/\s+/g, '_')}_KDP_Back_Cover_300dpi.png`);
+      downloadBase64(canvas.toDataURL('image/png'), `${titleText.toLowerCase().replace(/\s+/g, '_')}_back_cover.png`);
     } else {
-      // Amazon KDP Paperback Full Cover Spread at 300 DPI
-      // 6x9 Trim size = 1800 x 2700 px @ 300 DPI per cover
-      // Bleed = 0.125 inches = 37.5 px on top, bottom, left, right (total height = 2776 px)
-      // Spine width @ 300 DPI = Math.max(30, spinePageCount * 0.00225 * 300)
-      const bleedPx = 38; // 0.125" bleed at 300 DPI
-      const trimWidthPx = 1800; // 6.0" at 300 DPI
-      const trimHeightPx = 2700; // 9.0" at 300 DPI
-      const canvasHeight = trimHeightPx + bleedPx * 2; // 2776 px
+      const frontWidth = 1200;
+      const backWidth = 1200;
+      const spineWidth = Math.max(160, Math.min(600, Math.round(100 + spinePageCount * 1.25)));
+      const totalWidth = backWidth + spineWidth + frontWidth;
+      const canvasHeight = 1800;
 
-      const calculatedSpineInches = Math.max(0.1, spinePageCount * 0.00225);
-      const spineWidthPx = Math.round(calculatedSpineInches * 300);
-
-      const totalCanvasWidth = bleedPx * 2 + trimWidthPx * 2 + spineWidthPx;
-
-      canvas.width = totalCanvasWidth;
+      canvas.width = totalWidth;
       canvas.height = canvasHeight;
 
-      const backX = bleedPx;
-      const spineX = backX + trimWidthPx;
-      const frontX = spineX + spineWidthPx;
-
-      // Fill background across entire spread
+      // 1. Back Cover
       ctx.fillStyle = backBgColor || '#18181b';
-      ctx.fillRect(0, 0, totalCanvasWidth, canvasHeight);
+      ctx.fillRect(0, 0, backWidth, canvasHeight);
 
-      // 1. Back Cover Panel
       ctx.fillStyle = '#ffffff';
       ctx.textAlign = 'center';
-      ctx.font = 'bold 78px sans-serif';
-      fillWrappedCanvasText(ctx, titleText.toUpperCase(), backX + trimWidthPx / 2, bleedPx + 240, 1500, 96);
+      ctx.font = 'bold 52px sans-serif';
+      fillWrappedCanvasText(ctx, titleText.toUpperCase(), 600, 180, 1040, 66);
 
       if (subtitleText) {
-        ctx.font = 'italic 42px sans-serif';
+        ctx.font = 'italic 28px sans-serif';
         ctx.fillStyle = '#e4e4e7';
-        fillWrappedCanvasText(ctx, subtitleText, backX + trimWidthPx / 2, bleedPx + 460, 1400, 58);
+        fillWrappedCanvasText(ctx, subtitleText, 600, 320, 1000, 40);
       }
 
       ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
-      ctx.lineWidth = 3;
+      ctx.lineWidth = 2;
       ctx.beginPath();
-      ctx.moveTo(backX + 200, bleedPx + 560);
-      ctx.lineTo(backX + trimWidthPx - 200, bleedPx + 560);
+      ctx.moveTo(200, 380);
+      ctx.lineTo(1000, 380);
       ctx.stroke();
 
       ctx.fillStyle = '#f4f4f5';
-      ctx.font = '36px sans-serif';
+      ctx.font = '28px sans-serif';
       ctx.textAlign = 'left';
-      fillWrappedCanvasText(ctx, blurbText, backX + 180, bleedPx + 660, 1440, 56);
+      fillWrappedCanvasText(ctx, blurbText, 120, 450, 960, 44);
 
       if (showBarcodeOnBack) {
-        // Amazon KDP standard barcode safety area: 2.0" x 1.2" (600 x 360 px at 300 DPI)
-        // Placed 0.25" (75 px) from spine and bottom bleed
-        const barcodeWidth = 550;
-        const barcodeHeight = 320;
-        const barcodeX = spineX - barcodeWidth - 75;
-        const barcodeY = canvasHeight - bleedPx - barcodeHeight - 75;
-        drawBarcodeOnCanvas(ctx, currentIsbn, barcodeX, barcodeY, barcodeWidth, barcodeHeight);
+        drawBarcodeOnCanvas(ctx, currentIsbn, 820, 1500, 260, 180);
       }
 
       ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
-      ctx.font = 'bold 26px sans-serif';
+      ctx.font = 'bold 20px sans-serif';
       ctx.textAlign = 'left';
-      ctx.fillText("PUBLISHED WITH MANUS AI", backX + 180, canvasHeight - bleedPx - 100);
+      ctx.fillText("PUBLISHED WITH MANUS AI", 120, 1680);
 
-      // 2. Spine Panel
-      ctx.fillStyle = spineBgColor || backBgColor || '#18181b';
-      ctx.fillRect(spineX, 0, spineWidthPx, canvasHeight);
+      // 2. Spine
+      const spineX = backWidth;
+      ctx.fillStyle = spineBgColor || '#18181b';
+      ctx.fillRect(spineX, 0, spineWidth, canvasHeight);
 
-      // Fold Safety Lines
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.25)';
-      ctx.lineWidth = 2;
-      ctx.setLineDash([16, 16]);
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
+      ctx.lineWidth = 3;
+      ctx.setLineDash([12, 12]);
       ctx.beginPath();
       ctx.moveTo(spineX, 0);
       ctx.lineTo(spineX, canvasHeight);
-      ctx.moveTo(spineX + spineWidthPx, 0);
-      ctx.lineTo(spineX + spineWidthPx, canvasHeight);
+      ctx.moveTo(spineX + spineWidth, 0);
+      ctx.lineTo(spineX + spineWidth, canvasHeight);
       ctx.stroke();
       ctx.setLineDash([]);
 
-      // Spine Text (rotated 90 degrees clockwise)
-      if (spineWidthPx >= 45) { // Only render text if spine is wide enough (>= 0.15 in, ~79 pages)
-        ctx.save();
-        const spineCenterX = spineX + spineWidthPx / 2;
-        ctx.translate(spineCenterX, canvasHeight / 2);
-        ctx.rotate(Math.PI / 2);
-        ctx.fillStyle = spineTextColor || '#ffffff';
-        ctx.textAlign = 'center';
-        const fontSize = Math.min(48, Math.max(22, spineWidthPx * 0.4));
-        ctx.font = `bold ${Math.round(fontSize)}px sans-serif`;
-        ctx.fillText(`${titleText.toUpperCase()}   —   ${authorText.toUpperCase()}`, 0, fontSize * 0.3);
-        ctx.restore();
-      }
+      ctx.save();
+      const spineCenterX = spineX + spineWidth / 2;
+      ctx.translate(spineCenterX, canvasHeight / 2);
+      ctx.rotate(Math.PI / 2);
+      ctx.fillStyle = spineTextColor || '#ffffff';
+      ctx.textAlign = 'center';
+      ctx.font = 'bold 36px sans-serif';
+      ctx.fillText(`${titleText.toUpperCase()}  —  ${authorText}`, 0, 12);
+      ctx.restore();
 
-      // 3. Front Cover Panel
+      // 3. Front Cover
+      const frontX = spineX + spineWidth;
+      ctx.fillStyle = backBgColor || '#18181b';
+      ctx.fillRect(frontX, 0, frontWidth, canvasHeight);
+
       if (assets.coverUrl) {
         await new Promise<void>((resolve) => {
           const img = new Image();
           img.crossOrigin = 'anonymous';
           img.onload = () => {
-            ctx.drawImage(img, frontX, 0, trimWidthPx + bleedPx, canvasHeight);
+            ctx.drawImage(img, frontX, 0, frontWidth, canvasHeight);
             resolve();
           };
           img.onerror = () => resolve();
           img.src = assets.coverUrl!;
         });
-      } else {
-        ctx.fillStyle = backBgColor || '#18181b';
-        ctx.fillRect(frontX, 0, trimWidthPx + bleedPx, canvasHeight);
       }
 
       if (showCoverTextOverlay) {
         if (coverOverlayDarkness !== 'none') {
           const opacity = coverOverlayDarkness === 'subtle' ? 0.25 : coverOverlayDarkness === 'dark' ? 0.65 : 0.45;
           ctx.fillStyle = `rgba(0, 0, 0, ${opacity})`;
-          ctx.fillRect(frontX, 0, trimWidthPx + bleedPx, canvasHeight);
+          ctx.fillRect(frontX, 0, frontWidth, canvasHeight);
         }
 
         ctx.fillStyle = '#ffffff';
         ctx.textAlign = 'center';
 
-        ctx.font = 'bold 96px sans-serif';
-        fillWrappedCanvasText(ctx, titleText.toUpperCase(), frontX + trimWidthPx / 2, bleedPx + 320, 1450, 110);
+        ctx.font = 'bold 72px sans-serif';
+        fillWrappedCanvasText(ctx, titleText.toUpperCase(), frontX + 600, 240, 1000, 85);
 
         if (subtitleText) {
-          ctx.font = 'italic 48px sans-serif';
-          fillWrappedCanvasText(ctx, subtitleText, frontX + trimWidthPx / 2, bleedPx + 700, 1400, 64);
+          ctx.font = 'italic 36px sans-serif';
+          fillWrappedCanvasText(ctx, subtitleText, frontX + 600, 520, 1000, 48);
         }
 
-        ctx.font = 'bold 56px serif';
-        ctx.fillText(authorText.toUpperCase(), frontX + trimWidthPx / 2, canvasHeight - bleedPx - 240);
+        ctx.font = 'bold 42px serif';
+        ctx.fillText(authorText.toUpperCase(), frontX + 600, 1600);
       }
 
-      downloadBase64(canvas.toDataURL('image/png'), `${titleText.toLowerCase().replace(/\s+/g, '_')}_KDP_Paperback_Full_Cover_Spread_300DPI.png`);
+      downloadBase64(canvas.toDataURL('image/png'), `${titleText.toLowerCase().replace(/\s+/g, '_')}_full_wrap_cover.png`);
     }
   };
 
   const handleSuggestMetadata = async () => {
-    const contextParts: string[] = [];
-    if (idea.trim()) contextParts.push(`Book Concept / Idea:\n${idea.trim()}`);
-    if (bookDetails.title.trim()) contextParts.push(`Current Book Title:\n${bookDetails.title.trim()}`);
-    if (bookDetails.subtitle.trim()) contextParts.push(`Current Subtitle:\n${bookDetails.subtitle.trim()}`);
-    if (bookDetails.description.trim()) contextParts.push(`Current Description:\n${bookDetails.description.trim()}`);
-    if (outline.trim()) contextParts.push(`Book Outline:\n${outline.trim()}`);
-    if (chapters.length > 0) {
-      const chapterList = chapters.map((c, i) => `${i + 1}. ${c.title}`).join('\n');
-      const excerpts = chapters.slice(0, 3).map(c => `Chapter: ${c.title}\nExcerpt:\n${c.content.substring(0, 600)}`).join('\n\n');
-      contextParts.push(`Chapter Overview:\n${chapterList}\n\nManuscript Excerpts:\n${excerpts}`);
-    }
-
-    const sourceConcept = contextParts.join('\n\n').trim();
+    let sourceConcept = idea.trim();
 
     if (!sourceConcept) {
-      alert("Please define your book idea in Project Setup, write an outline, or enter a title first before running Magic Fill.");
+      if (chapters.length > 0) {
+        const titleHeader = bookDetails.title ? `Book Title: ${bookDetails.title}\n\n` : '';
+        const chapterTitles = `Chapter Overview:\n` + chapters.map((c, i) => `${i + 1}. ${c.title}`).join('\n');
+        const excerpts = chapters.slice(0, 4).map(c => `Chapter: ${c.title}\nExcerpt:\n${c.content.substring(0, 800)}`).join('\n\n');
+        sourceConcept = `${titleHeader}${chapterTitles}\n\nManuscript Excerpts:\n${excerpts}`;
+      } else if (outline.trim()) {
+        sourceConcept = `Book Outline:\n${outline}`;
+      } else if (bookDetails.title.trim()) {
+        sourceConcept = `Book Title: ${bookDetails.title}`;
+      }
+    }
+
+    if (!sourceConcept) {
+      alert("Please define your book idea in Project Setup or import a manuscript first.");
       return;
     }
     
     setIsGenerating(true);
     setGeneratingStep('KDP Agent: Scanning Manuscript & Researching Market Trends...');
     try {
-      pushHistorySnapshot("Before Magic Fill metadata optimization");
       const meta = await optimizeMetadata(sourceConcept, customApiKey, bookDetails?.language || 'English');
       if (meta) {
-        const keywords = formatMetadataKeywords(meta.keywords);
-        const categories = formatMetadataCategories(meta.categories);
+        // Map AI categories to dropdown if possible
+        const mappedCategories = (meta.categories || []).map((c: string) => {
+          if (c.includes("FICTION")) {
+            if (c.includes("Fantasy")) return "FICTION / Fantasy / Epic";
+            if (c.includes("Mystery")) return "FICTION / Mystery & Detective / General";
+            if (c.includes("Romance")) return "FICTION / Romance / Contemporary";
+            if (c.includes("Science Fiction") || c.includes("Sci-Fi")) return "FICTION / Science Fiction / General";
+            if (c.includes("Thriller")) return "FICTION / Thrillers / Suspense";
+            return "FICTION / General";
+          }
+          if (c.includes("Business")) return "NON-FICTION / Business & Economics / General";
+          if (c.includes("Health") || c.includes("Fitness")) return "NON-FICTION / Health & Fitness / General";
+          if (c.includes("Self-Help")) return "NON-FICTION / Self-Help / General";
+          if (c.includes("Tech") || c.includes("Computer")) return "NON-FICTION / Technology / General";
+          if (c.includes("Education")) return "NON-FICTION / Education / General";
+          return "NON-FICTION / General";
+        });
 
         setBookDetails(prev => ({
           ...prev,
-          title: meta.title || prev.title || '',
-          subtitle: meta.subtitle || prev.subtitle || '',
-          authorName: meta.author_name || prev.authorName || user?.displayName || '',
-          description: meta.description_html || prev.description || '',
-          keywords: keywords.some(k => k.trim()) ? keywords : prev.keywords,
-          categories: categories.some(c => c.trim()) ? categories : prev.categories,
-          pricing: meta.suggested_price || prev.pricing || '$9.99',
-          trimSize: meta.trim_size || prev.trimSize || '6x9',
+          title: prev.title || meta.title || '',
+          subtitle: prev.subtitle || meta.subtitle || '',
+          authorName: prev.authorName || meta.author_name || user?.displayName || '',
+          description: meta.description_html || prev.description,
+          keywords: meta.keywords || prev.keywords,
+          categories: mappedCategories.length > 0 ? mappedCategories : prev.categories,
+          pricing: meta.suggested_price || prev.pricing,
+          trimSize: meta.trim_size || prev.trimSize,
           metadata: meta
         }));
-
-        setHistoryNotice("Magic Fill complete: Title, blurb, 7 keywords, and 3 BISAC categories updated!");
-        setTimeout(() => setHistoryNotice(null), 3500);
       }
     } catch (e: any) {
       const msg = e.message || "Unknown error";
@@ -2989,41 +1972,6 @@ export default function App() {
     } finally {
       setIsGenerating(false);
       setGeneratingStep('');
-    }
-  };
-
-  const handleGenerateKeywordsOnly = async () => {
-    const currentTitle = bookDetails.title || idea;
-    if (!currentTitle.trim()) {
-      alert("Please enter a book title or idea first so AI can generate relevant keywords!");
-      return;
-    }
-
-    setIsGenerating(true);
-    setGeneratingStep("KDP Agent: Generating 7 target search keywords specifically for this book...");
-    try {
-      pushHistorySnapshot("Before generating keywords for current book");
-      const kwList = await generateBookKeywords(bookDetails, idea, chapters, customApiKey);
-      if (kwList && kwList.length > 0) {
-        const formatted = formatMetadataKeywords(kwList);
-        setBookDetails(prev => ({
-          ...prev,
-          keywords: formatted
-        }));
-        setHistoryNotice("Updated 7 KDP backend keywords specifically for this book!");
-        setTimeout(() => setHistoryNotice(null), 3500);
-      }
-    } catch (e: any) {
-      let msg = e?.message || "Unknown error";
-      if (msg.includes("RESOURCE_EXHAUSTED") || msg.includes("429") || msg.includes("quota")) {
-        setHistoryNotice("Quota limit reached. Auto-extracted keywords applied from book content!");
-      } else {
-        setHistoryNotice("Keywords updated from book details.");
-      }
-      setTimeout(() => setHistoryNotice(null), 4000);
-    } finally {
-      setIsGenerating(false);
-      setGeneratingStep("");
     }
   };
 
@@ -3196,30 +2144,6 @@ export default function App() {
         outline,
         activeChapterId
       );
-
-      // Extract learned style/editorial rules from user feedback
-      if (sendingInput && sendingInput.trim().length >= 5) {
-        const activeChTitle = activeChapterId ? (chapters.find(c => c.id === activeChapterId)?.title || 'Chapter') : 'Manuscript';
-        extractLearnedRulesFromFeedback(
-          sendingInput,
-          currentDocContent,
-          revisedContent || (updatedChapters && updatedChapters.length > 0 ? updatedChapters[0].content : ''),
-          activeChTitle,
-          customApiKey
-        ).then(newRules => {
-          if (newRules && newRules.length > 0) {
-            setContinuityMemory(prev => {
-              const existingSet = new Set(prev.learnedRules.map(r => r.rule.toLowerCase().trim()));
-              const filtered = newRules.filter(r => !existingSet.has(r.rule.toLowerCase().trim()));
-              if (filtered.length === 0) return prev;
-              return {
-                ...prev,
-                learnedRules: [...prev.learnedRules, ...filtered]
-              };
-            });
-          }
-        }).catch(err => console.warn("Failed to extract rules from feedback:", err));
-      }
 
       // Save state snapshot before applying AI modifications
       if (updatedOutline || (revisedContent && viewMode === 'outline') || (updatedChapters && updatedChapters.length > 0) || (revisedContent && docType === 'chapter')) {
@@ -3712,341 +2636,200 @@ export default function App() {
       )}
       
       {/* Left Sidebar */}
-      <aside className={`fixed md:relative z-40 bg-white border-r border-zinc-200 flex flex-col h-full flex-shrink-0 transition-all duration-300 md:translate-x-0 ${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'} ${sidebarCollapsed ? 'w-[80vw] sm:w-64 md:w-16' : 'w-[80vw] sm:w-64 md:w-64'}`}>
-        <div className={`p-4 border-b border-zinc-200 flex items-center ${sidebarCollapsed ? 'justify-between md:justify-center md:px-2' : 'justify-between'}`}>
-          <div className="flex items-center gap-2 overflow-hidden">
-            <BookOpen className="w-5 h-5 text-indigo-600 shrink-0" />
-            {!sidebarCollapsed && <h1 className="text-base font-semibold tracking-tight">manus</h1>}
+      <aside className={`fixed md:relative z-40 w-[80vw] sm:w-64 bg-white border-r border-zinc-200 flex flex-col h-full flex-shrink-0 transition-transform duration-300 md:translate-x-0 ${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+        <div className="p-4 border-b border-zinc-200 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <BookOpen className="w-5 h-5 text-indigo-600" />
+            <h1 className="text-base font-semibold tracking-tight">manus</h1>
           </div>
-          <button
-            onClick={toggleSidebarCollapsed}
-            className="hidden md:flex p-1.5 text-zinc-400 hover:text-zinc-700 hover:bg-zinc-100 rounded-lg transition-colors cursor-pointer shrink-0"
-            title={sidebarCollapsed ? "Expand Sidebar" : "Collapse Sidebar"}
-          >
-            <ChevronLeft className={`w-4 h-4 transition-transform duration-300 ${sidebarCollapsed ? 'rotate-180' : ''}`} />
-          </button>
         </div>
         
-        <div className={`p-4 border-b border-zinc-100 flex items-center ${sidebarCollapsed ? 'justify-center md:p-3' : 'gap-3'} bg-zinc-50`}>
-           <img src={user.photoURL} alt="User" className="w-8 h-8 rounded-full border border-zinc-200 shrink-0" referrerPolicy="no-referrer" title={user.displayName || 'User'} />
-           {!sidebarCollapsed && (
-             <div className="flex-1 overflow-hidden">
-                 <p className="text-xs font-semibold text-zinc-900 truncate">{user.displayName}</p>
-                 <button onClick={logoutUser} className="text-[10px] text-zinc-500 hover:text-indigo-600 transition">Sign Out</button>
-             </div>
-           )}
+        <div className="p-4 border-b border-zinc-100 flex items-center gap-3 bg-zinc-50">
+           <img src={user.photoURL} alt="User" className="w-8 h-8 rounded-full border border-zinc-200" referrerPolicy="no-referrer" />
+           <div className="flex-1 overflow-hidden">
+               <p className="text-xs font-semibold text-zinc-900 truncate">{user.displayName}</p>
+               <button onClick={logoutUser} className="text-[10px] text-zinc-500 hover:text-indigo-600 transition">Sign Out</button>
+           </div>
         </div>
         
         <div className="flex-1 overflow-y-auto py-4">
           <nav className="space-y-1 px-2 mb-6">
             <button
               onClick={() => { setViewMode('library'); setMobileMenuOpen(false); }}
-              title={sidebarCollapsed ? "My Library" : undefined}
-              className={`w-full flex items-center ${sidebarCollapsed ? 'justify-center px-2 py-2.5' : 'justify-between px-3 py-2'} rounded-lg text-sm font-medium transition-colors ${
+              className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
                 viewMode === 'library' ? 'bg-indigo-50 text-indigo-700' : 'text-zinc-600 hover:bg-zinc-100'
               }`}
             >
-              <div className={`flex items-center ${sidebarCollapsed ? 'justify-center' : 'gap-3'}`}>
-                <Library className="w-4 h-4 shrink-0" />
-                {!sidebarCollapsed && <span>My Library</span>}
+              <div className="flex items-center gap-3">
+                <Library className="w-4 h-4" /> My Library
               </div>
             </button>
             <button
               onClick={handleCreateNewProject}
-              title={sidebarCollapsed ? "New Book" : undefined}
-              className={`w-full flex items-center ${sidebarCollapsed ? 'justify-center px-2 py-2.5' : 'justify-between px-3 py-2'} rounded-lg text-sm font-medium transition-colors text-zinc-600 hover:bg-zinc-100`}
+              className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-sm font-medium transition-colors text-zinc-600 hover:bg-zinc-100`}
             >
-              <div className={`flex items-center ${sidebarCollapsed ? 'justify-center' : 'gap-3'}`}>
-                <Plus className="w-4 h-4 shrink-0" />
-                {!sidebarCollapsed && <span>New Book</span>}
+              <div className="flex items-center gap-3">
+                <Plus className="w-4 h-4" /> New Book
               </div>
             </button>
           </nav>
 
           {projectId && (
-            sidebarCollapsed ? (
-              <div className="px-2 my-2 border-t border-zinc-100 pt-2 flex justify-center">
-                <button 
-                  onClick={handleManuscriptAudit}
-                  title="manus AI Manuscript Audit"
-                  className="p-1.5 text-yellow-600 hover:bg-yellow-50 rounded-lg transition-colors cursor-pointer"
-                  disabled={isGenerating}
-                >
-                  <Sparkles className="w-4 h-4" />
-                </button>
-              </div>
-            ) : (
-              <div className="px-4 mb-2 text-xs font-semibold text-zinc-400 uppercase tracking-wider flex items-center justify-between">
-                manus AI Pro
-                <button 
-                  onClick={handleManuscriptAudit}
-                  title="manus AI Manuscript Audit"
-                  className="text-yellow-600 hover:text-yellow-700 transition-colors cursor-pointer"
-                  disabled={isGenerating}
-                >
-                  <Sparkles className="w-3.5 h-3.5" />
-                </button>
-              </div>
-            )
+            <div className="px-4 mb-2 text-xs font-semibold text-zinc-400 uppercase tracking-wider flex items-center justify-between">
+              manus AI Pro
+              <button 
+                onClick={handleManuscriptAudit}
+                title="manus AI Manuscript Audit"
+                className="text-yellow-600 hover:text-yellow-700 transition-colors"
+                disabled={isGenerating}
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+              </button>
+            </div>
           )}
 
           <nav className="space-y-1 px-2">
             <button
               onClick={() => { setViewMode('setup'); setMobileMenuOpen(false); }}
               disabled={!projectId}
-              title={sidebarCollapsed ? "Project Setup" : undefined}
-              className={`w-full flex items-center ${sidebarCollapsed ? 'justify-center px-2 py-2.5' : 'gap-3 px-3 py-2'} rounded-lg text-sm font-medium transition-colors ${
+              className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
                 viewMode === 'setup' ? 'bg-indigo-50 text-indigo-700' : 
                 !projectId ? 'opacity-50 cursor-not-allowed text-zinc-400' : 'text-zinc-600 hover:bg-zinc-100'
               }`}
             >
-              <Settings className="w-4 h-4 shrink-0" />
-              {!sidebarCollapsed && <span>Project Setup</span>}
+              <Settings className="w-4 h-4" /> Project Setup
             </button>
             <button
               onClick={() => { setViewMode('details'); setMobileMenuOpen(false); }}
               disabled={!projectId}
-              title={sidebarCollapsed ? "Book Details" : undefined}
-              className={`w-full flex items-center ${sidebarCollapsed ? 'justify-center px-2 py-2.5' : 'gap-3 px-3 py-2'} rounded-lg text-sm font-medium transition-colors ${
+              className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
                 viewMode === 'details' ? 'bg-indigo-50 text-indigo-700' : 
                 !projectId ? 'opacity-50 cursor-not-allowed text-zinc-400' : 'text-zinc-600 hover:bg-zinc-100'
               }`}
             >
-              <FileText className="w-4 h-4 shrink-0" />
-              {!sidebarCollapsed && <span>Book Details</span>}
+              <FileText className="w-4 h-4" /> Book Details
             </button>
             <button
               onClick={() => { setViewMode('outline'); setMobileMenuOpen(false); }}
               disabled={!outline || !projectId}
-              title={sidebarCollapsed ? "Outline" : undefined}
-              className={`w-full flex items-center ${sidebarCollapsed ? 'justify-center px-2 py-2.5' : 'gap-3 px-3 py-2'} rounded-lg text-sm font-medium transition-colors ${
+              className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
                 viewMode === 'outline' ? 'bg-indigo-50 text-indigo-700' : 
                 (!outline || !projectId) ? 'opacity-50 cursor-not-allowed text-zinc-400' : 'text-zinc-600 hover:bg-zinc-100'
               }`}
             >
-              <List className="w-4 h-4 shrink-0" />
-              {!sidebarCollapsed && <span>Outline</span>}
-            </button>
-            <button
-              onClick={() => { setViewMode('toc'); setMobileMenuOpen(false); }}
-              disabled={!projectId || chapters.length === 0}
-              title={sidebarCollapsed ? "Table of Contents" : undefined}
-              className={`w-full flex items-center ${sidebarCollapsed ? 'justify-center px-2 py-2.5' : 'gap-3 px-3 py-2'} rounded-lg text-sm font-medium transition-colors ${
-                viewMode === 'toc' ? 'bg-indigo-50 text-indigo-700 font-bold' : 
-                (!projectId || chapters.length === 0) ? 'opacity-50 cursor-not-allowed text-zinc-400' : 'text-zinc-600 hover:bg-zinc-100'
-              }`}
-            >
-              <AlignLeft className="w-4 h-4 text-indigo-600 shrink-0" />
-              {!sidebarCollapsed && <span>Table of Contents</span>}
+              <List className="w-4 h-4" /> Outline
             </button>
             <button
               onClick={() => { setViewMode('assets'); setMobileMenuOpen(false); }}
               disabled={!projectId}
-              title={sidebarCollapsed ? "Publish & Export" : undefined}
-              className={`w-full flex items-center ${sidebarCollapsed ? 'justify-center px-2 py-2.5' : 'gap-3 px-3 py-2'} rounded-lg text-sm font-medium transition-colors ${
+              className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
                 viewMode === 'assets' ? 'bg-emerald-50 text-emerald-800 font-bold' : 
                 !projectId ? 'opacity-50 cursor-not-allowed text-zinc-400' : 'text-zinc-700 hover:bg-emerald-50/60'
               }`}
             >
-              <Download className="w-4 h-4 text-emerald-600 shrink-0" />
-              {!sidebarCollapsed && <span>Publish & Export</span>}
+              <Download className="w-4 h-4 text-emerald-600" /> Publish & Export
             </button>
             <button
               onClick={() => { setViewMode('marketing'); setMobileMenuOpen(false); }}
               disabled={!projectId}
-              title={sidebarCollapsed ? "Marketing & PR Studio" : undefined}
-              className={`w-full flex items-center ${sidebarCollapsed ? 'justify-center px-2 py-2.5' : 'gap-3 px-3 py-2'} rounded-lg text-sm font-medium transition-colors ${
+              className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
                 viewMode === 'marketing' ? 'bg-purple-50 text-purple-800 font-bold' : 
                 !projectId ? 'opacity-50 cursor-not-allowed text-zinc-400' : 'text-zinc-700 hover:bg-purple-50/60'
               }`}
             >
-              <Megaphone className="w-4 h-4 text-purple-600 shrink-0" />
-              {!sidebarCollapsed && <span>Marketing & PR Studio</span>}
-            </button>
-            <button
-              onClick={() => { setViewMode('humanizer'); setMobileMenuOpen(false); }}
-              disabled={!projectId}
-              title={sidebarCollapsed ? "Anti-AI Humanizer Studio" : undefined}
-              className={`w-full flex items-center ${sidebarCollapsed ? 'justify-center px-2 py-2.5' : 'gap-3 px-3 py-2'} rounded-lg text-sm font-medium transition-colors ${
-                viewMode === 'humanizer' ? 'bg-emerald-50 text-emerald-800 font-bold' : 
-                !projectId ? 'opacity-50 cursor-not-allowed text-zinc-400' : 'text-zinc-700 hover:bg-emerald-50/60'
-              }`}
-            >
-              <Wand2 className="w-4 h-4 text-emerald-600 shrink-0" />
-              {!sidebarCollapsed && <span>Anti-AI Humanizer Studio</span>}
-            </button>
-            <button
-              onClick={() => { setViewMode('audiobook'); setMobileMenuOpen(false); }}
-              disabled={!projectId}
-              title={sidebarCollapsed ? "Audiobook Studio" : undefined}
-              className={`w-full flex items-center ${sidebarCollapsed ? 'justify-center px-2 py-2.5' : 'gap-3 px-3 py-2'} rounded-lg text-sm font-medium transition-colors ${
-                viewMode === 'audiobook' ? 'bg-indigo-50 text-indigo-800 font-bold' : 
-                !projectId ? 'opacity-50 cursor-not-allowed text-zinc-400' : 'text-zinc-700 hover:bg-indigo-50/60'
-              }`}
-            >
-              <Headphones className="w-4 h-4 text-indigo-600 shrink-0" />
-              {!sidebarCollapsed && <span>Audiobook Studio</span>}
-            </button>
-            <button
-              onClick={() => { setViewMode('research'); setMobileMenuOpen(false); }}
-              title={sidebarCollapsed ? "Amazon Opportunity Spotter" : undefined}
-              className={`w-full flex items-center ${sidebarCollapsed ? 'justify-center px-2 py-2.5' : 'gap-3 px-3 py-2'} rounded-lg text-sm font-medium transition-colors ${
-                viewMode === 'research' ? 'bg-amber-50 text-amber-900 font-bold' : 'text-zinc-700 hover:bg-amber-50/60'
-              }`}
-            >
-              <TrendingUp className="w-4 h-4 text-amber-600 shrink-0" />
-              {!sidebarCollapsed && <span>Amazon Opportunity Spotter</span>}
+              <Megaphone className="w-4 h-4 text-purple-600" /> Marketing & PR Studio
             </button>
           </nav>
 
           {chapters.length > 0 && projectId && (
-            sidebarCollapsed ? (
-              <div className="mt-4 pt-4 border-t border-zinc-100 px-2 space-y-1">
-                <div className="flex justify-center mb-1">
-                  <button 
-                    onClick={handleAddChapter}
-                    className="p-1.5 hover:bg-zinc-100 rounded-lg text-indigo-600 transition-colors cursor-pointer"
-                    title="Add Chapter"
-                  >
-                    <Plus className="w-4 h-4" />
-                  </button>
-                </div>
-                <div className="space-y-1 max-h-48 overflow-y-auto">
-                  {chapters.map((chapter, idx) => (
-                    <button
-                      key={chapter.id}
-                      onClick={() => {
-                        setActiveChapterId(chapter.id);
-                        setViewMode('chapter');
-                        setMobileMenuOpen(false);
-                      }}
-                      title={`Chapter ${idx + 1}: ${chapter.title}`}
-                      className={`w-full flex items-center justify-center p-2 rounded-lg text-xs font-bold transition-colors cursor-pointer ${
-                        viewMode === 'chapter' && activeChapterId === chapter.id
-                          ? 'bg-indigo-50 text-indigo-700'
-                          : 'text-zinc-600 hover:bg-zinc-100'
-                      }`}
-                    >
-                      {idx + 1}
-                    </button>
-                  ))}
-                </div>
+            <div className="mt-8 px-4">
+              <div className="flex items-center justify-between mb-3 text-xs font-semibold text-zinc-500 uppercase tracking-wider">
+                <span>Chapters</span>
+                <button 
+                  onClick={handleAddChapter}
+                  className="p-1 hover:bg-zinc-100 rounded text-indigo-600 transition-colors"
+                  title="Add Chapter"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                </button>
               </div>
-            ) : (
-              <div className="mt-8 px-4">
-                <div className="flex items-center justify-between mb-3 text-xs font-semibold text-zinc-500 uppercase tracking-wider">
-                  <span>Chapters</span>
-                  <button 
-                    onClick={handleAddChapter}
-                    className="p-1 hover:bg-zinc-100 rounded text-indigo-600 transition-colors cursor-pointer"
-                    title="Add Chapter"
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-                <div className="space-y-1">
-                  {chapters.map((chapter, idx) => {
-                    const isAuthorPage = chapter.title.toLowerCase().includes('about the author');
-                    return (
-                      <div key={chapter.id} className="group relative">
-                        <button
-                          onClick={() => {
-                            setActiveChapterId(chapter.id);
-                            setViewMode('chapter');
-                            setMobileMenuOpen(false);
-                          }}
-                          className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-sm transition-colors text-left pr-14 cursor-pointer ${
-                            viewMode === 'chapter' && activeChapterId === chapter.id
-                              ? 'bg-indigo-50 text-indigo-700 font-medium'
-                              : isAuthorPage ? 'bg-amber-50/70 text-amber-900 hover:bg-amber-100/70' : 'text-zinc-600 hover:bg-zinc-100'
-                          }`}
-                        >
-                          <span className="truncate flex items-center gap-1.5">
-                            {isAuthorPage ? (
-                              <>
-                                <User className="w-3.5 h-3.5 text-amber-600 flex-shrink-0" />
-                                <span className="font-medium text-amber-950">About the Author</span>
-                              </>
-                            ) : (
-                              `${idx + 1}. ${chapter.title}`
-                            )}
-                          </span>
-                          {chapter.status === 'done' && <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0 ml-1" />}
-                          {chapter.status === 'generating' && <Loader2 className="w-3.5 h-3.5 text-indigo-500 animate-spin flex-shrink-0 ml-1" />}
-                        </button>
-                      <div className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-1 opacity-80 sm:opacity-0 group-hover:opacity-100 transition-opacity pr-1">
-                        {chapter.status === 'generating' ? (
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleStopGeneration(chapter.id);
-                            }}
-                            className="p-1 bg-red-100 hover:bg-red-200 text-red-700 rounded transition-colors cursor-pointer"
-                            title="Stop AI Generation for this Chapter"
-                          >
-                            <Square className="w-3.5 h-3.5 fill-red-600 text-red-600" />
-                          </button>
-                        ) : (
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleGenerateChapter(chapter.id);
-                            }}
-                            className="p-1 hover:bg-indigo-100 rounded text-zinc-400 hover:text-indigo-600 transition-colors cursor-pointer"
-                            title="Re-generate this Chapter with AI"
-                          >
-                            <RotateCcw className="w-3.5 h-3.5" />
-                          </button>
-                        )}
-                        <button 
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            const newTitle = prompt("Rename Chapter:", chapter.title);
-                            if (newTitle) handleRenameChapter(chapter.id, newTitle);
-                          }}
-                          className="p-1 hover:bg-zinc-200 rounded text-zinc-400 hover:text-indigo-600 transition-colors cursor-pointer"
-                          title="Rename"
-                        >
-                          <Type className="w-3.5 h-3.5" />
-                        </button>
-                        <button 
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setChapterToDelete(chapter);
-                          }}
-                          className="p-1 hover:bg-red-100 rounded text-zinc-400 hover:text-red-600 transition-colors cursor-pointer"
-                          title="Delete Chapter"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
+              <div className="space-y-1">
+                {chapters.map((chapter, idx) => {
+                  const isAuthorPage = chapter.title.toLowerCase().includes('about the author');
+                  return (
+                    <div key={chapter.id} className="group relative">
+                      <button
+                        onClick={() => {
+                          setActiveChapterId(chapter.id);
+                          setViewMode('chapter');
+                          setMobileMenuOpen(false);
+                        }}
+                        className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-sm transition-colors text-left pr-14 ${
+                          viewMode === 'chapter' && activeChapterId === chapter.id
+                            ? 'bg-indigo-50 text-indigo-700 font-medium'
+                            : isAuthorPage ? 'bg-amber-50/70 text-amber-900 hover:bg-amber-100/70' : 'text-zinc-600 hover:bg-zinc-100'
+                        }`}
+                      >
+                        <span className="truncate flex items-center gap-1.5">
+                          {isAuthorPage ? (
+                            <>
+                              <User className="w-3.5 h-3.5 text-amber-600 flex-shrink-0" />
+                              <span className="font-medium text-amber-950">About the Author</span>
+                            </>
+                          ) : (
+                            `${idx + 1}. ${chapter.title}`
+                          )}
+                        </span>
+                        {chapter.status === 'done' && <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0 ml-1" />}
+                        {chapter.status === 'generating' && <Loader2 className="w-3.5 h-3.5 text-indigo-500 animate-spin flex-shrink-0 ml-1" />}
+                      </button>
+                    <div className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-1 opacity-80 sm:opacity-0 group-hover:opacity-100 transition-opacity pr-1">
+                      <button 
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          const newTitle = prompt("Rename Chapter:", chapter.title);
+                          if (newTitle) handleRenameChapter(chapter.id, newTitle);
+                        }}
+                        className="p-1 hover:bg-zinc-200 rounded text-zinc-400 hover:text-indigo-600 transition-colors"
+                        title="Rename"
+                      >
+                        <Type className="w-3.5 h-3.5" />
+                      </button>
+                      <button 
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setChapterToDelete(chapter);
+                        }}
+                        className="p-1 hover:bg-red-100 rounded text-zinc-400 hover:text-red-600 transition-colors"
+                        title="Delete Chapter"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
                     </div>
-                  );
-                })}
-                </div>
-                {chapters.some(c => c.status === 'idle') && (
-                  <button
-                    onClick={() => handleGenerateAllChapters(false)}
-                    disabled={isGenerating}
-                    className="w-full mt-3 flex justify-center items-center gap-1.5 px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-semibold rounded-lg transition-colors border border-indigo-100 disabled:opacity-50 cursor-pointer"
-                  >
-                    {isGenerating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <PlayCircle className="w-3.5 h-3.5" />}
-                    Generate {chapters.filter(c => c.status === 'idle').length} Unwritten
-                  </button>
-                )}
+                  </div>
+                );
+              })}
               </div>
-            )
+              {chapters.some(c => c.status === 'idle') && (
+                <button
+                  onClick={() => handleGenerateAllChapters(false)}
+                  disabled={isGenerating}
+                  className="w-full mt-3 flex justify-center items-center gap-1.5 px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-semibold rounded-lg transition-colors border border-indigo-100 disabled:opacity-50"
+                >
+                  {isGenerating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <PlayCircle className="w-3.5 h-3.5" />}
+                  Generate {chapters.filter(c => c.status === 'idle').length} Unwritten
+                </button>
+              )}
+            </div>
           )}
         </div>
         
-        <div className={`p-4 border-t border-zinc-200 ${sidebarCollapsed ? 'flex justify-center p-2' : ''}`}>
+        <div className="p-4 border-t border-zinc-200">
           <button
             onClick={() => setIsSettingsOpen(true)}
-            title={sidebarCollapsed ? "API Settings" : undefined}
-            className={`w-full flex items-center ${sidebarCollapsed ? 'justify-center p-2' : 'gap-3 px-3 py-2'} rounded-lg text-sm font-medium text-zinc-600 hover:bg-zinc-100 transition-colors cursor-pointer`}
+            className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium text-zinc-600 hover:bg-zinc-100 transition-colors"
           >
-            <Key className="w-4 h-4 shrink-0" />
-            {!sidebarCollapsed && <span>API Settings</span>}
+            <Key className="w-4 h-4" /> API Settings
           </button>
         </div>
       </aside>
@@ -4056,96 +2839,24 @@ export default function App() {
         <header className="h-14 bg-white border-b border-zinc-200 flex items-center px-4 md:px-6 flex-shrink-0 justify-between gap-4">
           <div className="flex items-center gap-3 truncate">
             <button 
-              className="md:hidden p-1.5 -ml-1.5 text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100 rounded-md cursor-pointer"
+              className="md:hidden p-1.5 -ml-1.5 text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100 rounded-md"
               onClick={() => setMobileMenuOpen(true)}
             >
               <Menu className="w-5 h-5" />
-            </button>
-            <button
-              className="hidden md:flex p-1.5 -ml-1.5 text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100 rounded-md transition-colors cursor-pointer"
-              onClick={toggleSidebarCollapsed}
-              title={sidebarCollapsed ? "Expand Sidebar" : "Collapse Sidebar"}
-            >
-              <PanelLeft className="w-5 h-5" />
             </button>
             <h2 className="text-sm font-medium text-zinc-800 truncate">
               {viewMode === 'library' && 'My Library'}
               {viewMode === 'setup' && 'Project Setup'}
               {viewMode === 'outline' && 'Book Outline'}
-              {viewMode === 'toc' && 'Table of Contents Studio'}
               {viewMode === 'chapter' && (chapters.find(c => c.id === activeChapterId)?.title || 'Chapter View')}
               {viewMode === 'assets' && 'Assets & Export'}
               {viewMode === 'marketing' && 'Marketing & PR Studio'}
-              {viewMode === 'humanizer' && 'Anti-AI Humanizer Studio'}
             </h2>
           </div>
 
           <div className="flex items-center gap-2">
-            {/* Command Palette / Quick Tool Search */}
-            <button
-              onClick={() => setCommandPaletteOpen(true)}
-              className="flex items-center gap-2 px-3 py-1.5 text-xs font-semibold rounded-xl text-zinc-700 bg-zinc-100 hover:bg-zinc-200/80 border border-zinc-200 transition-all shadow-2xs cursor-pointer"
-              title="Search tools, chapters, and publishing features (Cmd+K)"
-            >
-              <Search className="w-3.5 h-3.5 text-indigo-600" />
-              <span className="hidden lg:inline">Search Tools...</span>
-              <kbd className="hidden sm:inline-block px-1.5 py-0.5 bg-white border border-zinc-200 rounded font-mono text-[10px] text-zinc-500 shadow-2xs">⌘K</kbd>
-            </button>
-
-            {/* Amazon Niche Opportunity Spotter */}
-            <button
-              onClick={() => setViewMode('research')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-xl transition-all shadow-2xs cursor-pointer ${
-                viewMode === 'research'
-                  ? 'bg-amber-600 text-white'
-                  : 'bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300'
-              }`}
-              title="Amazon KDP Niche Opportunity, Keyword & BSR Research Tool"
-            >
-              <TrendingUp className="w-3.5 h-3.5 text-amber-600" />
-              <span className="hidden sm:inline">Amazon Research</span>
-            </button>
-
-            {/* Help & Publishing Center Drawer */}
-            <button
-              onClick={() => setHelpDrawerOpen(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-xl text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200/80 transition-all shadow-2xs cursor-pointer"
-              title="Open KDP Publishing Guide & Launch Checklist"
-            >
-              <HelpCircle className="w-3.5 h-3.5 text-indigo-600" />
-              <span className="hidden sm:inline">Guide & Checklist</span>
-            </button>
-
-            {projectId && (
-              <button
-                onClick={() => setShowContinuityModal(true)}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-xl bg-purple-50 hover:bg-purple-100 text-purple-900 border border-purple-200/80 transition-all shadow-2xs cursor-pointer relative"
-                title="View & Edit AI Learned Style Rules and Chapter Continuity Memory"
-              >
-                <Brain className="w-3.5 h-3.5 text-purple-600 animate-pulse" />
-                <span className="hidden sm:inline">AI Cohesion</span>
-                {continuityMemory.learnedRules.length > 0 && (
-                  <span className="ml-0.5 px-1.5 py-0.2 text-[10px] bg-purple-600 text-white font-extrabold rounded-full">
-                    {continuityMemory.learnedRules.length}
-                  </span>
-                )}
-              </button>
-            )}
-
             {projectId && (
               <>
-                <button
-                  onClick={() => setViewMode('humanizer')}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-xl transition-all shadow-2xs cursor-pointer ${
-                    viewMode === 'humanizer'
-                      ? 'bg-emerald-600 text-white'
-                      : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200/80'
-                  }`}
-                  title="Detect AI phrase markers & humanize manuscript"
-                >
-                  <Wand2 className="w-3.5 h-3.5 text-emerald-600" />
-                  <span className="hidden md:inline">AI Humanizer</span>
-                </button>
                 <button
                   onClick={() => setViewMode('marketing')}
                   className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-xl transition-all shadow-2xs cursor-pointer ${
@@ -4156,7 +2867,7 @@ export default function App() {
                   title="Open Marketing & PR Studio"
                 >
                   <Megaphone className="w-3.5 h-3.5 text-purple-600" />
-                  <span className="hidden md:inline">Marketing & PR</span>
+                  <span>Marketing & PR</span>
                 </button>
                 <button
                   onClick={() => setViewMode('assets')}
@@ -4168,7 +2879,7 @@ export default function App() {
                   title="Open Publishing & Export Center (.docx, .zip bundle, store metadata)"
                 >
                   <Download className="w-3.5 h-3.5 text-emerald-600" />
-                  <span className="hidden md:inline">Publish & Export</span>
+                  <span>Publish & Export</span>
                 </button>
               </>
             )}
@@ -4404,13 +3115,13 @@ export default function App() {
                       </div>
                       <div>
                         <label className="block text-sm font-semibold text-zinc-800 mb-2 flex items-center gap-2">
-                          <FileText className="w-4 h-4 text-zinc-500" /> Upload Reference Docs (PDF, DOCX, TXT, EPUB, etc.)
+                          <FileText className="w-4 h-4 text-zinc-500" /> Upload Reference Docs
                         </label>
                         <div className="relative">
                           <input
                             type="file"
                             multiple
-                            accept="*"
+                            accept=".txt,.md,.csv"
                             disabled={isGenerating}
                             onChange={(e) => {
                               if (e.target.files) {
@@ -4421,7 +3132,7 @@ export default function App() {
                           />
                           {sourceFiles.length > 0 && (
                             <p className="text-[10px] text-emerald-600 mt-1 font-bold">
-                              {sourceFiles.length} file(s) selected: {sourceFiles.map(f => f.name).join(', ')}
+                              {sourceFiles.length} file(s) selected
                             </p>
                           )}
                         </div>
@@ -4611,21 +3322,9 @@ export default function App() {
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                       <div>
-                        <div className="flex items-center justify-between mb-2">
-                          <label className="text-sm font-semibold text-zinc-800 flex items-center gap-2">
-                            <Tag className="w-4 h-4 text-indigo-600" /> Keywords (7 recommended)
-                          </label>
-                          <button
-                            type="button"
-                            onClick={handleGenerateKeywordsOnly}
-                            disabled={isGenerating}
-                            className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200/80 rounded-lg text-xs font-semibold transition-all shadow-2xs cursor-pointer disabled:opacity-50"
-                            title="Generate 7 KDP search keywords specific to this book"
-                          >
-                            {isGenerating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5 text-indigo-600" />}
-                            Auto-Generate Keywords
-                          </button>
-                        </div>
+                        <label className="block text-sm font-semibold text-zinc-800 mb-2 flex items-center gap-2">
+                          <Tag className="w-4 h-4" /> Keywords (7 recommended)
+                        </label>
                         <div className="grid grid-cols-1 gap-2">
                           {[0,1,2,3,4,5,6].map(i => (
                             <input
@@ -4644,40 +3343,38 @@ export default function App() {
                         </div>
                       </div>
                     <div>
-                      <div className="flex items-center justify-between mb-2">
-                        <label className="block text-sm font-semibold text-zinc-800">BISAC Categories</label>
-                        <span className="text-[10px] text-zinc-400 font-medium">3 categories selected</span>
-                      </div>
+                      <label className="block text-sm font-semibold text-zinc-800 mb-2">BISAC Categories</label>
                       <div className="grid grid-cols-1 gap-2">
-                        {[0, 1, 2].map(i => {
-                          const currentVal = bookDetails.categories[i] || "";
-                          const isCustomOption = currentVal && !BISAC_CATEGORIES.includes(currentVal);
-
-                          return (
-                            <div key={i} className="relative group">
-                              <select
-                                value={currentVal}
-                                onChange={(e) => {
-                                  const c = [...bookDetails.categories];
-                                  c[i] = e.target.value;
-                                  setBookDetails(prev => ({ ...prev, categories: c }));
-                                }}
-                                className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-2.5 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all appearance-none cursor-pointer pr-10 text-zinc-800 font-medium"
-                              >
-                                <option value="">Select a Category</option>
-                                {isCustomOption && (
-                                  <option value={currentVal}>{currentVal} (AI Recommended)</option>
-                                )}
-                                {BISAC_CATEGORIES.map(cat => (
-                                  <option key={cat} value={cat}>{cat}</option>
-                                ))}
-                              </select>
-                              <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-zinc-400">
-                                <ChevronRight className="w-4 h-4 rotate-90" />
-                              </div>
+                        {[0,1,2].map(i => (
+                          <div key={i} className="relative group">
+                            <select
+                              value={bookDetails.categories[i] || ""}
+                              onChange={(e) => {
+                                const c = [...bookDetails.categories];
+                                c[i] = e.target.value;
+                                setBookDetails(prev => ({ ...prev, categories: c }));
+                              }}
+                              className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all appearance-none cursor-pointer pr-10"
+                            >
+                              <option value="">Select a Category</option>
+                              <option value="FICTION / General">FICTION / General</option>
+                              <option value="FICTION / Fantasy / Epic">FICTION / Fantasy / Epic</option>
+                              <option value="FICTION / Mystery & Detective / General">FICTION / Mystery / General</option>
+                              <option value="FICTION / Romance / Contemporary">FICTION / Romance / General</option>
+                              <option value="FICTION / Science Fiction / General">FICTION / Sci-Fi / General</option>
+                              <option value="FICTION / Thrillers / Suspense">FICTION / Thriller / Suspense</option>
+                              <option value="NON-FICTION / General">NON-FICTION / General</option>
+                              <option value="NON-FICTION / Business & Economics / General">BUSINESS / Economics</option>
+                              <option value="NON-FICTION / Health & Fitness / General">HEALTH / Fitness</option>
+                              <option value="NON-FICTION / Self-Help / General">SELF-HELP / Personal Growth</option>
+                              <option value="NON-FICTION / Technology / General">TECHNOLOGY / Computers</option>
+                              <option value="NON-FICTION / Education / General">EDUCATION / General</option>
+                            </select>
+                            <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-zinc-400">
+                              <ChevronRight className="w-4 h-4 rotate-90" />
                             </div>
-                          );
-                        })}
+                          </div>
+                        ))}
                       </div>
                     </div>
                     </div>
@@ -4825,37 +3522,10 @@ export default function App() {
 
                   if (chapter.status === 'generating') {
                     return (
-                      <div className="flex flex-col items-center justify-center p-8 sm:p-12 min-h-[360px] bg-white rounded-2xl border border-zinc-200 shadow-sm text-center">
-                        <div className="relative mb-4">
-                          <Loader2 className="w-12 h-12 text-indigo-600 animate-spin" />
-                          <Sparkles className="w-5 h-5 text-purple-500 absolute -top-1 -right-1 animate-pulse" />
-                        </div>
-                        <h3 className="text-xl font-bold text-zinc-900">Writing Chapter with AI...</h3>
-                        <p className="text-xs sm:text-sm text-zinc-500 mt-1 max-w-md leading-relaxed">
-                          Gemini AI is generating deep manuscript content for <strong className="text-zinc-800">"{chapter.title}"</strong>.
-                        </p>
-
-                        <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
-                          <button
-                            onClick={() => handleStopGeneration(chapter.id)}
-                            className="flex items-center gap-2 px-5 py-2.5 bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 rounded-xl text-xs font-bold transition-all shadow-2xs cursor-pointer"
-                          >
-                            <Square className="w-4 h-4 fill-red-600 text-red-600" />
-                            <span>Stop AI Generation</span>
-                          </button>
-
-                          <button
-                            onClick={() => handleGenerateChapter(chapter.id)}
-                            className="flex items-center gap-2 px-4 py-2.5 bg-zinc-100 hover:bg-zinc-200 text-zinc-700 border border-zinc-200 rounded-xl text-xs font-bold transition-all shadow-2xs cursor-pointer"
-                          >
-                            <RotateCcw className="w-3.5 h-3.5 text-indigo-600" />
-                            <span>Restart / Re-generate</span>
-                          </button>
-                        </div>
-
-                        <p className="text-[11px] text-zinc-400 mt-4 italic">
-                          If generation takes too long or appears stuck, click "Stop AI Generation" or "Restart / Re-generate".
-                        </p>
+                      <div className="flex flex-col items-center justify-center h-64 bg-white rounded-2xl border border-zinc-200">
+                        <Loader2 className="w-8 h-8 text-indigo-600 animate-spin mb-4" />
+                        <p className="text-zinc-600 font-medium">Writing chapter...</p>
+                        <p className="text-sm text-zinc-400 mt-2">This may take a minute for long chapters.</p>
                       </div>
                     );
                   }
@@ -4865,11 +3535,7 @@ export default function App() {
                       chapter={chapter} 
                       components={MarkdownComponents}
                       onContentChange={(content) => setChapters(prev => prev.map(c => c.id === chapter.id ? { ...c, content } : c))}
-                      onRegenerate={() => handleGenerateChapter(chapter.id)}
-                      onHumanize={() => {
-                        setActiveChapterId(chapter.id);
-                        setViewMode('humanizer');
-                      }}
+                      onRegenerate={() => handleGenerateChapter(chapter.id)} 
                       onDelete={() => setChapterToDelete(chapter)}
                       onUndo={handleUndo}
                       canUndo={historyIndex > 0}
@@ -4877,89 +3543,6 @@ export default function App() {
                   );
                 })()}
               </div>
-            )}
-
-            {viewMode === 'humanizer' && (
-              <HumanizerStudio
-                chapters={chapters}
-                activeChapterId={activeChapterId}
-                customApiKey={customApiKey}
-                language={bookDetails.language}
-                onUpdateChapterContent={(chId, newContent) => {
-                  setChapters(prev => prev.map(c => c.id === chId ? { ...c, content: newContent } : c));
-                  pushHistorySnapshot('Humanized chapter prose');
-                }}
-                onUpdateAllChaptersContent={(updatedList) => {
-                  setChapters(prev => prev.map(c => {
-                    const found = updatedList.find(u => u.id === c.id);
-                    return found ? { ...c, content: found.content } : c;
-                  }));
-                  pushHistorySnapshot('Humanized entire manuscript');
-                }}
-              />
-            )}
-
-            {viewMode === 'audiobook' && (
-              <AudiobookStudio
-                bookDetails={bookDetails}
-                chapters={chapters}
-                activeChapterId={activeChapterId}
-                onSelectChapter={(chId) => setActiveChapterId(chId)}
-                customApiKey={customApiKey}
-              />
-            )}
-
-            {viewMode === 'research' && (
-              <AmazonNicheResearchStudio
-                customApiKey={customApiKey}
-                activeBookTitle={bookDetails.title}
-                activeBookIdea={idea}
-                onApplyKeywordsToBook={(keywords) => {
-                  setBookDetails(prev => ({ ...prev, keywords }));
-                  pushHistorySnapshot('Applied Amazon keywords');
-                }}
-                onApplyCategoriesToBook={(categoryPath) => {
-                  setBookDetails(prev => ({
-                    ...prev,
-                    categories: Array.from(new Set([...(prev.categories || []), categoryPath]))
-                  }));
-                  pushHistorySnapshot('Applied Amazon category');
-                }}
-                onApplyPriceToBook={(ebook, paperback) => {
-                  setBookDetails(prev => ({
-                    ...prev,
-                    pricing: `$${ebook} eBook / $${paperback} Paperback`
-                  }));
-                  pushHistorySnapshot('Applied Amazon target list prices');
-                }}
-                onStartBookFromNiche={(nicheData) => {
-                  setIdea(nicheData.richPrompt || nicheData.topic);
-                  setBookDetails(prev => ({
-                    ...prev,
-                    title: nicheData.topic,
-                    subtitle: `A Comprehensive Guide & Practical Actionable Framework`,
-                    description: nicheData.verdict,
-                    keywords: nicheData.keywords,
-                    categories: nicheData.categories,
-                    pricing: `$${nicheData.ebookPrice} eBook / $${nicheData.paperbackPrice} Paperback`,
-                    globalInstructions: `STRATEGIC MARKET POSITIONING (From Amazon Niche Analytics):\n- Target Audience: ${nicheData.targetAudience}\n- Mandatory Reader Content Gaps to Solve (Competitor Fixes):\n  ${nicheData.contentGaps.join('\n  ')}`
-                  }));
-                  pushHistorySnapshot(`Started book from Niche: ${nicheData.topic}`);
-                  setViewMode('setup');
-                }}
-              />
-            )}
-
-            {viewMode === 'toc' && (
-              <TableOfContentsStudio
-                chapters={chapters}
-                bookDetails={bookDetails}
-                onSelectChapter={(chapterId) => {
-                  setActiveChapterId(chapterId);
-                  setViewMode('chapter');
-                }}
-                onInsertTocChapter={handleInsertTocChapter}
-              />
             )}
 
             {viewMode === 'assets' && (
@@ -5042,40 +3625,7 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* Subtabs for Publish & Export Studio */}
-                <div className="flex items-center gap-2 border-b border-zinc-200 pb-2">
-                  <button
-                    onClick={() => setAssetsSubTab('export')}
-                    className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                      assetsSubTab === 'export'
-                        ? 'bg-emerald-600 text-white shadow-md'
-                        : 'bg-white text-zinc-600 hover:bg-zinc-100 border border-zinc-200'
-                    }`}
-                  >
-                    <Download className="w-4 h-4" /> KDP Bundle & File Export
-                  </button>
-
-                  <button
-                    onClick={() => setAssetsSubTab('price_royalty')}
-                    className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                      assetsSubTab === 'price_royalty'
-                        ? 'bg-emerald-600 text-white shadow-md'
-                        : 'bg-white text-zinc-600 hover:bg-zinc-100 border border-zinc-200'
-                    }`}
-                  >
-                    <DollarSign className="w-4 h-4" /> Royalty & Price Calculator
-                  </button>
-                </div>
-
-                {assetsSubTab === 'price_royalty' && (
-                  <PriceRoyaltyCalculator
-                    wordCount={chapters.reduce((acc, c) => acc + (c.content ? c.content.split(/\s+/).length : 0), 0)}
-                    bookTitle={bookDetails.title}
-                    category={bookDetails.categories?.[0] || 'Non-Fiction'}
-                  />
-                )}
-
-                {chapters.length === 0 && assetsSubTab === 'export' && (
+                {chapters.length === 0 && (
                   <div className="bg-amber-50 border border-amber-200 p-4 rounded-2xl text-amber-900 text-xs flex items-center justify-between gap-4 shadow-2xs">
                     <div className="flex items-center gap-3">
                       <AlertTriangle className="w-5 h-5 text-amber-600 flex-shrink-0" />
@@ -5092,8 +3642,6 @@ export default function App() {
                     </button>
                   </div>
                 )}
-
-                {assetsSubTab === 'export' && (
 
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                   <div className="lg:col-span-2 space-y-8">
@@ -5157,55 +3705,21 @@ export default function App() {
                         </div>
 
                         <div>
-                          <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
-                            <div className="flex items-center gap-2">
-                              <label className="text-[10px] font-bold text-zinc-400 uppercase">KDP Book Description</label>
-                              <div className="flex bg-zinc-100 border border-zinc-200 rounded-lg p-0.5 text-[10px] font-semibold">
-                                <button
-                                  type="button"
-                                  onClick={() => setDescViewTab('formatted')}
-                                  className={`px-2 py-0.5 rounded transition-all cursor-pointer ${
-                                    descViewTab === 'formatted' ? 'bg-white text-zinc-900 shadow-2xs font-bold' : 'text-zinc-500 hover:text-zinc-800'
-                                  }`}
-                                >
-                                  Formatted Reader View
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => setDescViewTab('html')}
-                                  className={`px-2 py-0.5 rounded transition-all cursor-pointer ${
-                                    descViewTab === 'html' ? 'bg-white text-zinc-900 shadow-2xs font-bold' : 'text-zinc-500 hover:text-zinc-800'
-                                  }`}
-                                >
-                                  Raw KDP HTML
-                                </button>
-                              </div>
-                            </div>
+                          <div className="flex items-center justify-between mb-1">
+                            <label className="text-[10px] font-bold text-zinc-400 uppercase">KDP Book Description (HTML)</label>
                             <button
-                              type="button"
                               onClick={() => {
-                                const textToCopy = bookDetails.description || assets.metadata?.description_html || '';
-                                navigator.clipboard.writeText(textToCopy);
-                                alert("Description copied to clipboard!");
+                                navigator.clipboard.writeText(bookDetails.description || assets.metadata?.description_html || '');
+                                alert("Description HTML copied to clipboard!");
                               }}
-                              className="text-[10px] text-indigo-600 font-semibold hover:underline flex items-center gap-1 cursor-pointer"
+                              className="text-[10px] text-indigo-600 font-semibold hover:underline flex items-center gap-1"
                             >
-                              <Copy className="w-3 h-3" /> Copy Text / HTML
+                              <Copy className="w-3 h-3" /> Copy HTML
                             </button>
                           </div>
-
-                          {descViewTab === 'formatted' ? (
-                            <div 
-                              className="p-4 bg-zinc-50 text-zinc-800 rounded-xl text-xs max-h-52 overflow-y-auto leading-relaxed border border-zinc-200 shadow-2xs space-y-2 font-sans"
-                              dangerouslySetInnerHTML={{ 
-                                __html: bookDetails.description || assets.metadata?.description_html || '<p className="text-zinc-400 italic">Write or generate a book description in Book Details or Auto-Generate All Assets.</p>' 
-                              }}
-                            />
-                          ) : (
-                            <div className="p-4 bg-zinc-900 text-zinc-300 rounded-xl font-mono text-xs whitespace-pre-wrap max-h-52 overflow-y-auto leading-relaxed border border-zinc-800">
-                              {bookDetails.description || assets.metadata?.description_html || 'Write or generate a book description in Book Details or Auto-Generate All Assets.'}
-                            </div>
-                          )}
+                          <div className="p-4 bg-zinc-900 text-zinc-300 rounded-xl font-mono text-xs whitespace-pre-wrap max-h-40 overflow-y-auto leading-relaxed border border-zinc-800">
+                            {bookDetails.description || assets.metadata?.description_html || 'Write or generate a book description in Book Details or Auto-Generate All Assets.'}
+                          </div>
                         </div>
 
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -5241,35 +3755,19 @@ export default function App() {
                         </h3>
                         <span className="text-xs text-zinc-500 font-normal">Pre-formatted for Amazon KDP, Ingram & Apple</span>
                       </div>
-                      <div className="p-6 space-y-4">
-                        {/* KDP Format Clarification Callout */}
-                        <div className="p-3.5 bg-amber-50/80 border border-amber-200/80 rounded-xl text-xs text-amber-900 flex items-start gap-3">
-                          <div className="w-6 h-6 bg-amber-100 text-amber-800 rounded-lg flex items-center justify-center shrink-0 font-bold text-[11px] mt-0.5">
-                            KDP
-                          </div>
-                          <div className="space-y-1">
-                            <p className="font-bold text-amber-950">Uploading to Amazon KDP?</p>
-                            <p className="text-[11px] text-amber-800 leading-relaxed">
-                              Amazon suggests <strong>.kpf</strong> (Kindle Package Format), which is generated by Amazon's desktop program <i>Kindle Create</i>. However, <strong>Amazon KDP natively accepts our exported .docx (Microsoft Word) and .epub files directly!</strong> Simply click Amazon's yellow <strong>"Upload manuscript"</strong> button and select our pre-formatted <strong>.docx</strong> file. KDP will convert it into a perfect Kindle eBook and paperback print interior automatically.
-                            </p>
-                          </div>
-                        </div>
-
+                      <div className="p-6">
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                           <button 
                             onClick={handleExportDocx}
                             disabled={isGenerating}
-                            className="flex items-center gap-4 p-4 border border-emerald-300 hover:border-emerald-500 bg-emerald-50/60 hover:bg-emerald-50 rounded-2xl transition-all group cursor-pointer shadow-2xs relative"
+                            className="flex items-center gap-4 p-4 border border-emerald-200 hover:border-emerald-400 bg-emerald-50/40 hover:bg-emerald-50 rounded-2xl transition-all group cursor-pointer shadow-2xs"
                           >
                             <div className="w-11 h-11 bg-emerald-100 text-emerald-700 rounded-xl flex items-center justify-center flex-shrink-0">
                               <Download className="w-5 h-5" />
                             </div>
                             <div className="text-left">
-                              <div className="flex items-center gap-2">
-                                <strong className="text-sm text-emerald-950 block font-bold">Amazon KDP (.docx)</strong>
-                                <span className="bg-emerald-600 text-white text-[9px] font-bold px-1.5 py-0.5 rounded uppercase">Recommended for KDP</span>
-                              </div>
-                              <span className="text-[11px] text-emerald-700 font-medium">Direct Upload to KDP "Upload Manuscript" button</span>
+                              <strong className="text-sm text-emerald-950 block font-bold">Amazon KDP (.docx)</strong>
+                              <span className="text-[11px] text-emerald-700 font-medium">Formatted Print & eBook Ready</span>
                             </div>
                           </button>
 
@@ -5286,7 +3784,7 @@ export default function App() {
                             </div>
                             <div className="text-left">
                               <strong className="text-sm text-zinc-900 block font-bold">Raw Manuscript (.md)</strong>
-                              <span className="text-[11px] text-zinc-500">For Kindle Create or Markdown Editors</span>
+                              <span className="text-[11px] text-zinc-500">Kindle Create & Editor Friendly</span>
                             </div>
                           </button>
  
@@ -5303,36 +3801,24 @@ export default function App() {
                             </div>
                             <div className="text-left">
                               <strong className="text-sm text-zinc-900 block font-bold">Ebook HTML (.html)</strong>
-                              <span className="text-[11px] text-zinc-500">Alternative Direct Kindle Upload</span>
+                              <span className="text-[11px] text-zinc-500">Direct Kindle / ePub Upload</span>
                             </div>
                           </button>
 
-                          <div className="flex flex-col gap-2 p-4 border border-indigo-200 hover:border-indigo-400 bg-indigo-50/40 rounded-2xl transition-all shadow-2xs">
-                            <button 
-                              onClick={handlePrintPdf}
-                              className="flex items-center gap-4 text-left group cursor-pointer w-full"
-                            >
-                              <div className="w-11 h-11 bg-indigo-100 text-indigo-700 rounded-xl flex items-center justify-center flex-shrink-0">
-                                <Printer className="w-5 h-5" />
-                              </div>
-                              <div>
-                                <strong className="text-sm text-zinc-900 block font-bold">Print / Save as PDF</strong>
-                                <span className="text-[11px] text-zinc-500">Entire Formatted Print-Ready Manuscript</span>
-                              </div>
-                            </button>
-                            <div className="pt-2 border-t border-indigo-100/80 flex items-center gap-2">
-                              <input 
-                                type="checkbox"
-                                id="pdfLinkOption"
-                                checked={pdfIncludeHyperlinks}
-                                onChange={(e) => setPdfIncludeHyperlinks(e.target.checked)}
-                                className="w-3.5 h-3.5 text-indigo-600 rounded border-zinc-300 focus:ring-indigo-500 cursor-pointer"
-                              />
-                              <label htmlFor="pdfLinkOption" className="text-[11px] text-indigo-950 font-medium cursor-pointer select-none">
-                                Optional: Clickable Table of Contents jump links
-                              </label>
+                          <button 
+                            onClick={() => {
+                              window.print();
+                            }}
+                            className="flex items-center gap-4 p-4 border border-zinc-200 hover:border-zinc-300 bg-white hover:bg-zinc-50 rounded-2xl transition-all group cursor-pointer shadow-2xs"
+                          >
+                            <div className="w-11 h-11 bg-indigo-50 text-indigo-600 rounded-xl flex items-center justify-center flex-shrink-0">
+                              <LifeBuoy className="w-5 h-5" />
                             </div>
-                          </div>
+                            <div className="text-left">
+                              <strong className="text-sm text-zinc-900 block font-bold">Print / Save as PDF</strong>
+                              <span className="text-[11px] text-zinc-500">Print or Save PDF via Browser</span>
+                            </div>
+                          </button>
                         </div>
                       </div>
                     </div>
@@ -5417,48 +3903,32 @@ export default function App() {
                              )}
                            </div>
                            
-                           {/* View Mode Selector Tabs & Text Overlay Toggle */}
-                           <div className="flex items-center gap-2 flex-wrap">
+                           {/* View Mode Selector Tabs */}
+                           <div className="flex bg-white border border-zinc-200 rounded-lg p-0.5 text-[10px] font-semibold">
                              <button
-                               type="button"
-                               onClick={() => setShowCoverTextOverlay(!showCoverTextOverlay)}
-                               className={`px-2.5 py-1 rounded-md text-[10px] font-bold transition-all flex items-center gap-1 border cursor-pointer ${
-                                 showCoverTextOverlay
-                                   ? 'bg-amber-100 text-amber-900 border-amber-300 shadow-2xs'
-                                   : 'bg-zinc-100 text-zinc-600 border-zinc-200 hover:bg-zinc-200'
+                               onClick={() => setCoverViewMode('wrap')}
+                               className={`px-2.5 py-1 rounded-md transition-all flex items-center gap-1 ${
+                                 coverViewMode === 'wrap' ? 'bg-indigo-600 text-white shadow-xs' : 'text-zinc-600 hover:bg-zinc-100'
                                }`}
-                               title={showCoverTextOverlay ? "Text overlay active. Click to hide title/author text on cover artwork." : "Click to overlay title & author text on cover artwork"}
                              >
-                               <Type className="w-3 h-3 text-amber-600" />
-                               Overlay Text: {showCoverTextOverlay ? 'ON' : 'OFF'}
+                               <Layers className="w-3 h-3" /> Full Spread
                              </button>
-
-                             <div className="flex bg-white border border-zinc-200 rounded-lg p-0.5 text-[10px] font-semibold">
-                               <button
-                                 onClick={() => setCoverViewMode('wrap')}
-                                 className={`px-2.5 py-1 rounded-md transition-all flex items-center gap-1 ${
-                                   coverViewMode === 'wrap' ? 'bg-indigo-600 text-white shadow-xs' : 'text-zinc-600 hover:bg-zinc-100'
-                                 }`}
-                               >
-                                 <Layers className="w-3 h-3" /> Full Spread
-                               </button>
-                               <button
-                                 onClick={() => setCoverViewMode('front')}
-                                 className={`px-2.5 py-1 rounded-md transition-all flex items-center gap-1 ${
-                                   coverViewMode === 'front' ? 'bg-indigo-600 text-white shadow-xs' : 'text-zinc-600 hover:bg-zinc-100'
-                                 }`}
-                               >
-                                 <Eye className="w-3 h-3" /> Front
-                               </button>
-                               <button
-                                 onClick={() => setCoverViewMode('3d')}
-                                 className={`px-2.5 py-1 rounded-md transition-all flex items-center gap-1 ${
-                                   coverViewMode === '3d' ? 'bg-indigo-600 text-white shadow-xs' : 'text-zinc-600 hover:bg-zinc-100'
-                                 }`}
-                               >
-                                 <Box className="w-3 h-3" /> 3D Mockup
-                               </button>
-                             </div>
+                             <button
+                               onClick={() => setCoverViewMode('front')}
+                               className={`px-2.5 py-1 rounded-md transition-all flex items-center gap-1 ${
+                                 coverViewMode === 'front' ? 'bg-indigo-600 text-white shadow-xs' : 'text-zinc-600 hover:bg-zinc-100'
+                               }`}
+                             >
+                               <Eye className="w-3 h-3" /> Front
+                             </button>
+                             <button
+                               onClick={() => setCoverViewMode('3d')}
+                               className={`px-2.5 py-1 rounded-md transition-all flex items-center gap-1 ${
+                                 coverViewMode === '3d' ? 'bg-indigo-600 text-white shadow-xs' : 'text-zinc-600 hover:bg-zinc-100'
+                               }`}
+                             >
+                               <Box className="w-3 h-3" /> 3D Mockup
+                             </button>
                            </div>
                         </div>
 
@@ -5626,41 +4096,13 @@ export default function App() {
                                   </div>
                                 )}
 
-                                {/* Text Overlay Notice Bar if overlay is ON */}
-                                {showCoverTextOverlay && (
-                                  <div className="bg-amber-50 border border-amber-200 text-amber-900 text-[11px] px-3.5 py-2 rounded-xl flex items-center justify-between w-full shadow-2xs">
-                                    <span className="flex items-center gap-1.5 font-medium">
-                                      <Type className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-                                      Title/Author text is currently overlaid on artwork.
-                                    </span>
-                                    <button 
-                                      type="button"
-                                      onClick={() => setShowCoverTextOverlay(false)}
-                                      className="text-amber-950 font-bold underline hover:text-black text-[10px] ml-2 shrink-0 cursor-pointer"
-                                    >
-                                      Remove Text Overlay
-                                    </button>
-                                  </div>
-                                )}
-
-                                {/* Primary Action Bar: Save, Overlay, Studio Controls */}
-                                <div className="grid grid-cols-3 gap-2 w-full">
+                                {/* Primary Action Bar: Save, Edit, Overlay Toggle */}
+                                <div className="grid grid-cols-2 gap-2 w-full">
                                   <button 
                                     onClick={handleSaveCover}
                                     className="bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-semibold py-2 rounded-lg transition-colors flex items-center justify-center gap-1.5 shadow-sm"
                                   >
-                                    <Save className="w-3.5 h-3.5 text-white" /> Save Cover
-                                  </button>
-                                  <button 
-                                    onClick={() => setShowCoverTextOverlay(!showCoverTextOverlay)}
-                                    className={`text-[10px] font-semibold py-2 rounded-lg transition-colors flex items-center justify-center gap-1 border cursor-pointer ${
-                                      showCoverTextOverlay 
-                                        ? 'bg-amber-100 text-amber-900 border-amber-300 font-bold' 
-                                        : 'bg-zinc-100 text-zinc-700 border-zinc-200 hover:bg-zinc-200'
-                                    }`}
-                                    title="Toggle title & author text overlay on cover image"
-                                  >
-                                    <Type className="w-3.5 h-3.5 text-amber-600" /> Overlay: {showCoverTextOverlay ? 'ON' : 'OFF'}
+                                    <Save className="w-3.5 h-3.5" /> Save Cover
                                   </button>
                                   <button 
                                     onClick={() => setShowCoverEditor(!showCoverEditor)}
@@ -5670,7 +4112,7 @@ export default function App() {
                                         : 'bg-indigo-50 text-indigo-700 border-indigo-200 hover:bg-indigo-100'
                                     }`}
                                   >
-                                    <SlidersHorizontal className="w-3.5 h-3.5" /> {showCoverEditor ? 'Close' : 'Spine Options'}
+                                    <SlidersHorizontal className="w-3.5 h-3.5" /> {showCoverEditor ? 'Close Studio Controls' : 'Edit Print & Spine Options'}
                                   </button>
                                 </div>
 
@@ -5679,34 +4121,24 @@ export default function App() {
                                   <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider block text-center">
                                     Download High-Resolution PNG Assets
                                   </span>
-                                  <div className="grid grid-cols-2 gap-1.5 w-full">
+                                  <div className="grid grid-cols-3 gap-1.5 w-full">
                                     <button 
                                       onClick={() => handleDownloadCanvasPng('wrap')}
-                                      className="bg-zinc-900 text-white text-[10px] font-semibold py-2 px-2 rounded-lg hover:bg-zinc-800 transition-colors flex items-center justify-center gap-1 shadow-xs cursor-pointer"
-                                      title="Full Paperback Wrap Spread with spine calculation at 300 DPI"
+                                      className="bg-zinc-900 text-white text-[10px] font-semibold py-2 px-1 rounded-lg hover:bg-zinc-800 transition-colors flex items-center justify-center gap-1 shadow-xs"
                                     >
-                                      <Download className="w-3 h-3 text-emerald-400" /> KDP Full Wrap (.png)
-                                    </button>
-                                    <button 
-                                      onClick={() => handleDownloadCanvasPng('front')}
-                                      className="bg-white border border-zinc-200 text-zinc-800 text-[10px] font-semibold py-2 px-2 rounded-lg hover:bg-zinc-100 transition-colors flex items-center justify-center gap-1 shadow-xs cursor-pointer"
-                                      title="Amazon Kindle eBook Front Cover (1600x2560 px)"
-                                    >
-                                      <Download className="w-3 h-3 text-indigo-600" /> Kindle eBook (.jpg)
-                                    </button>
-                                    <button 
-                                      onClick={() => handleDownloadCanvasPng('acx')}
-                                      className="bg-purple-900 text-white text-[10px] font-semibold py-2 px-2 rounded-lg hover:bg-purple-950 transition-colors flex items-center justify-center gap-1 shadow-xs cursor-pointer"
-                                      title="ACX Audible Audiobook Square Cover (2400x2400 px @ 300 DPI)"
-                                    >
-                                      <Download className="w-3 h-3 text-purple-300" /> ACX Audiobook (.jpg)
+                                      <Download className="w-3 h-3 text-emerald-400" /> Full Wrap (.png)
                                     </button>
                                     <button 
                                       onClick={() => handleDownloadCanvasPng('back')}
-                                      className="bg-white border border-zinc-200 text-zinc-800 text-[10px] font-semibold py-2 px-2 rounded-lg hover:bg-zinc-100 transition-colors flex items-center justify-center gap-1 shadow-xs cursor-pointer"
-                                      title="KDP Back Cover (1800x2700 px @ 300 DPI)"
+                                      className="bg-white border border-zinc-200 text-zinc-800 text-[10px] font-semibold py-2 px-1 rounded-lg hover:bg-zinc-100 transition-colors flex items-center justify-center gap-1 shadow-xs"
                                     >
                                       <Download className="w-3 h-3 text-indigo-600" /> Back Cover (.png)
+                                    </button>
+                                    <button 
+                                      onClick={() => handleDownloadCanvasPng('front')}
+                                      className="bg-white border border-zinc-200 text-zinc-800 text-[10px] font-semibold py-2 px-1 rounded-lg hover:bg-zinc-100 transition-colors flex items-center justify-center gap-1 shadow-xs"
+                                    >
+                                      <Download className="w-3 h-3 text-indigo-600" /> Front Cover (.png)
                                     </button>
                                   </div>
                                 </div>
@@ -5716,7 +4148,7 @@ export default function App() {
                                     onClick={() => coverUploadRef.current?.click()}
                                     className="bg-white border border-zinc-200 text-zinc-700 text-[10px] font-semibold py-2 rounded-lg hover:bg-zinc-50 transition-colors flex items-center justify-center gap-1.5"
                                   >
-                                    <UploadCloud className="w-3.5 h-3.5 text-zinc-500" /> Upload Custom Cover Artwork
+                                    <UploadCloud className="w-3.5 h-3.5 text-zinc-500" /> Upload Custom Artwork
                                     <input 
                                       type="file" 
                                       ref={coverUploadRef}
@@ -5727,7 +4159,6 @@ export default function App() {
                                            const reader = new FileReader();
                                            reader.onload = (ev) => {
                                              setAssets(prev => ({ ...prev, coverUrl: ev.target?.result as string }));
-                                             setShowCoverTextOverlay(false);
                                              handleSaveCover();
                                            };
                                            reader.readAsDataURL(file);
@@ -5910,7 +4341,7 @@ export default function App() {
                                 <p className="text-xs font-semibold text-zinc-700 mb-1">No Book Cover Yet</p>
                                 <p className="text-[11px] text-zinc-400 mb-4 max-w-[200px] leading-snug">Generate a cover with manus AI or upload your own custom image file.</p>
                                 <label className="cursor-pointer bg-white border border-zinc-200 text-zinc-700 hover:bg-zinc-50 text-xs font-semibold px-4 py-2 rounded-lg transition-all flex items-center gap-2 shadow-sm">
-                                  <UploadCloud className="w-4 h-4 text-indigo-600" /> Upload Custom Cover / Artwork Image
+                                  <UploadCloud className="w-4 h-4 text-indigo-600" /> Upload Cover Image
                                   <input 
                                     type="file" 
                                     accept="image/*" 
@@ -5920,7 +4351,6 @@ export default function App() {
                                          const reader = new FileReader();
                                          reader.onload = (ev) => {
                                            setAssets(prev => ({ ...prev, coverUrl: ev.target?.result as string }));
-                                           setShowCoverTextOverlay(false);
                                            handleSaveCover();
                                          };
                                          reader.readAsDataURL(file);
@@ -6040,7 +4470,6 @@ export default function App() {
                      </div>
                   </div>
                 </div>
-                )}
               </div>
             )}
 
@@ -6097,28 +4526,6 @@ export default function App() {
                     </button>
 
                     <button
-                      onClick={() => setMarketingSubTab('beta_readers')}
-                      className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
-                        marketingSubTab === 'beta_readers'
-                          ? 'bg-purple-600 text-white shadow-md'
-                          : 'bg-white text-zinc-600 hover:bg-zinc-100 border border-zinc-200'
-                      }`}
-                    >
-                      <User className="w-4 h-4" /> Beta Reader Panel
-                    </button>
-
-                    <button
-                      onClick={() => setMarketingSubTab('audiobook_script')}
-                      className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
-                        marketingSubTab === 'audiobook_script'
-                          ? 'bg-purple-600 text-white shadow-md'
-                          : 'bg-white text-zinc-600 hover:bg-zinc-100 border border-zinc-200'
-                      }`}
-                    >
-                      <Headphones className="w-4 h-4" /> Audiobook Script Assistant
-                    </button>
-
-                    <button
                       onClick={() => setMarketingSubTab('social_campaign')}
                       className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
                         marketingSubTab === 'social_campaign'
@@ -6162,29 +4569,6 @@ export default function App() {
                       <Compass className="w-4 h-4" /> 30-Day Launch Strategy
                     </button>
                   </div>
-
-                  {/* Beta Reader Simulator Tab */}
-                  {marketingSubTab === 'beta_readers' && (
-                    <BetaReaderSimulator
-                      bookDetails={bookDetails}
-                      chapters={chapters}
-                      customApiKey={customApiKey}
-                      onUpdateChapterContent={(chapterId, newContent) => {
-                        setChapters(prev => prev.map(c => c.id === chapterId ? { ...c, content: newContent, status: 'done' } : c));
-                        pushHistorySnapshot('Applied AI Beta Reader Critique Fixes');
-                      }}
-                    />
-                  )}
-
-                  {/* Audiobook Script Assistant Tab */}
-                  {marketingSubTab === 'audiobook_script' && (
-                    <AudiobookAssistant
-                      bookDetails={bookDetails}
-                      chapters={chapters}
-                      customApiKey={customApiKey}
-                    />
-                  )}
-
 
                   {/* TAB 1: Official Press Release */}
                   {marketingSubTab === 'press_release' && (
@@ -6943,43 +5327,6 @@ export default function App() {
                       <span>Your custom key is saved privately in your local browser profile. You can change or reset it at any time.</span>
                     </div>
                   </div>
-
-                  {/* ElevenLabs API Key Setup */}
-                  <div className="pt-4 border-t border-indigo-100 space-y-3">
-                    <div className="flex items-center justify-between">
-                      <label className="block text-xs font-bold text-zinc-800 flex items-center gap-1.5">
-                        <Headphones className="w-3.5 h-3.5 text-purple-600" /> ElevenLabs Voice Synthesis API Key
-                      </label>
-                      {elevenLabsApiKey !== DEFAULT_ELEVENLABS_KEY && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setElevenLabsApiKey(DEFAULT_ELEVENLABS_KEY);
-                            localStorage.setItem('elevenlabs_api_key', DEFAULT_ELEVENLABS_KEY);
-                          }}
-                          className="text-[11px] font-bold text-indigo-600 hover:text-indigo-700 hover:underline uppercase tracking-tight"
-                        >
-                          Reset to Initial Key
-                        </button>
-                      )}
-                    </div>
-
-                    <input
-                      type="password"
-                      value={elevenLabsApiKey}
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        setElevenLabsApiKey(val);
-                        localStorage.setItem('elevenlabs_api_key', val);
-                      }}
-                      placeholder="e.g. sk_716bc2b43a089a12f75c..."
-                      className="w-full bg-white border border-zinc-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 font-mono text-zinc-800 shadow-2xs"
-                    />
-
-                    <p className="text-xs text-zinc-500 leading-relaxed">
-                      Used by the <strong className="text-zinc-800">Audiobook Studio</strong> to fetch voice clones and synthesize multi-speaker character audio lines.
-                    </p>
-                  </div>
                 </div>
 
                 {/* Category Prompts */}
@@ -7440,15 +5787,15 @@ export default function App() {
                 <div className="border-2 border-dashed border-zinc-200 rounded-xl p-4 bg-zinc-50 hover:bg-zinc-100/80 transition-colors text-center relative cursor-pointer group">
                   <input 
                     type="file" 
-                    accept="*" 
+                    accept=".md,.markdown,.txt" 
                     onChange={handleFileUploadMd} 
                     className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" 
                   />
                   <UploadCloud className="w-7 h-7 text-zinc-400 group-hover:text-indigo-600 mx-auto transition-colors" />
                   <p className="text-xs font-semibold text-zinc-700 mt-2">
-                    {mdFileName ? `Loaded: ${mdFileName}` : "Click or drag any manuscript file (.pdf, .docx, .epub, .md, .txt, etc.)"}
+                    {mdFileName ? `Loaded: ${mdFileName}` : "Click or drag .md / .txt manuscript file"}
                   </p>
-                  <p className="text-[11px] text-zinc-400 mt-0.5">Supports PDF, Word (.docx), EPUB, Markdown (.md), Plain Text (.txt), & all document formats</p>
+                  <p className="text-[11px] text-zinc-400 mt-0.5">Supports Markdown (.md) and plain text (.txt)</p>
                 </div>
 
                 <div className="relative">
@@ -7661,81 +6008,6 @@ export default function App() {
         </div>
       )}
 
-      {/* Global Command Palette Search (Cmd+K) */}
-      <CommandPalette
-        isOpen={commandPaletteOpen}
-        onClose={() => setCommandPaletteOpen(false)}
-        chapters={chapters}
-        onSelectChapter={(id) => {
-          setActiveChapterId(id);
-          setViewMode('chapter');
-        }}
-        onNavigateTab={(tab, subTab) => {
-          setViewMode(tab as ViewMode);
-          if (subTab) {
-            if (tab === 'marketing') setMarketingSubTab(subTab as any);
-            if (tab === 'assets') setAssetsSubTab(subTab as any);
-          }
-        }}
-      />
-
-      {/* Global KDP Launch & Help Center Drawer */}
-      <HelpDrawer
-        isOpen={helpDrawerOpen}
-        onClose={() => setHelpDrawerOpen(false)}
-        onNavigateTab={(tab, subTab) => {
-          setViewMode(tab as ViewMode);
-          if (subTab) {
-            if (tab === 'marketing') setMarketingSubTab(subTab as any);
-            if (tab === 'assets') setAssetsSubTab(subTab as any);
-          }
-        }}
-      />
-
-      {/* Global AI Continuity & Learned Rules Memory Modal */}
-      <ContinuityMemoryModal
-        isOpen={showContinuityModal}
-        onClose={() => setShowContinuityModal(false)}
-        learnedRules={continuityMemory.learnedRules}
-        chapterSummaries={continuityMemory.chapterSummaries}
-        chapters={chapters}
-        onUpdateLearnedRules={(rules) => setContinuityMemory(prev => ({ ...prev, learnedRules: rules }))}
-        onUpdateChapterSummary={(chId, summary) => setContinuityMemory(prev => ({ ...prev, chapterSummaries: { ...prev.chapterSummaries, [chId]: summary } }))}
-        customApiKey={customApiKey}
-      />
-
-      {/* Global Active AI Generation Status Bar with Stop & Re-generate Actions */}
-      {(isGenerating || chapters.some(c => c.status === 'generating')) && (
-        <div className="fixed bottom-6 right-6 z-50 bg-zinc-900/95 backdrop-blur-md text-white px-5 py-3.5 rounded-2xl shadow-2xl border border-zinc-700/80 flex items-center gap-4 animate-in slide-in-from-bottom-5">
-          <div className="flex items-center gap-3">
-            <div className="relative">
-              <Loader2 className="w-5 h-5 text-indigo-400 animate-spin" />
-              <span className="w-2 h-2 rounded-full bg-indigo-400 absolute top-0 right-0 animate-ping"></span>
-            </div>
-            <div>
-              <p className="text-xs font-bold text-zinc-100">
-                {generatingStep || 'Writing Chapter with AI...'}
-              </p>
-              <p className="text-[10px] text-zinc-400">
-                Gemini AI is generating manuscript content
-              </p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2 border-l border-zinc-700/80 pl-3">
-            <button
-              onClick={() => handleStopGeneration()}
-              className="px-3.5 py-1.5 bg-red-600 hover:bg-red-700 text-white text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 shadow-xs cursor-pointer"
-              title="Stop current AI generation immediately"
-            >
-              <Square className="w-3.5 h-3.5 fill-white text-white" />
-              <span>Stop AI</span>
-            </button>
-          </div>
-        </div>
-      )}
-
     </div>
   );
 }
-

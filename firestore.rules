@@ -1,0 +1,131 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isAuthenticated() {
+      return request.auth != null && request.auth.token.email_verified == true;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isOwner(ownerId) {
+      return isAuthenticated() && ownerId == request.auth.uid;
+    }
+
+    // --- Entity Validation Helpers ---
+
+    function isValidUserSettings(data) {
+      return data.keys().hasAll(['prompts']) &&
+             data.prompts is map &&
+             // Ensure optional fields are handled correctly
+             (data.keys().hasAll(['customApiKey']) ? (data.customApiKey is string && data.customApiKey.size() <= 500) : true);
+    }
+
+    function isValidProject(data) {
+      return data.keys().hasAll(['ownerId', 'title', 'updatedAt', 'category']) &&
+             data.ownerId is string && data.ownerId.size() <= 128 &&
+             data.title is string && data.title.size() <= 200 &&
+             data.updatedAt is number &&
+             data.category is string && data.category.size() <= 100 &&
+             (data.keys().hasAll(['idea']) ? (data.idea is string && data.idea.size() <= 10000) : true) &&
+             (data.keys().hasAll(['research']) ? (data.research is string && data.research.size() <= 1000000) : true) &&
+             (data.keys().hasAll(['outline']) ? (data.outline is string && data.outline.size() <= 1000000) : true) &&
+             (data.keys().hasAll(['bookDetails']) ? (data.bookDetails is string && data.bookDetails.size() <= 1000000) : true) &&
+             (data.keys().hasAll(['assets']) ? (data.assets is string && data.assets.size() <= 1000000) : true);
+    }
+
+    function isValidChapter(data) {
+      return data.keys().hasAll(['projectId', 'ownerId', 'title', 'status', 'order']) &&
+             data.projectId is string && data.projectId.size() <= 128 &&
+             data.ownerId is string && data.ownerId.size() <= 128 &&
+             data.title is string && data.title.size() <= 200 &&
+             data.status is string && data.status.size() <= 50 &&
+             data.order is number &&
+             (data.keys().hasAll(['content']) ? (data.content is string && data.content.size() <= 1000000) : true);
+    }
+
+    function isValidChat(data) {
+      return data.keys().hasAll(['projectId', 'ownerId', 'targetId', 'messages']) &&
+             data.projectId is string && data.projectId.size() <= 128 &&
+             data.ownerId is string && data.ownerId.size() <= 128 &&
+             data.targetId is string && data.targetId.size() <= 128 &&
+             data.messages is string && data.messages.size() <= 1000000;
+    }
+
+    // --- Rules ---
+
+    match /users/{userId}/settings/{settingId} {
+      allow get: if isAuthenticated() && isValidId(userId) && isOwner(userId);
+      allow list: if false; // Should only perform target lookups
+      allow create: if isAuthenticated() && isValidId(userId) && isOwner(userId) &&
+                       isValidId(settingId) && settingId == 'config' &&
+                       isValidUserSettings(incoming());
+      allow update: if isAuthenticated() && isValidId(userId) && isOwner(userId) &&
+                       isValidUserSettings(incoming()) &&
+                       incoming().diff(existing()).affectedKeys().hasOnly(['customApiKey', 'prompts']);
+      allow delete: if isAuthenticated() && isOwner(userId);
+    }
+
+    match /projects/{projectId} {
+      allow get: if isAuthenticated() && isValidId(projectId) && isOwner(existing().ownerId);
+      allow list: if isAuthenticated() && isOwner(resource.data.ownerId);
+      allow create: if isAuthenticated() && isValidId(projectId) &&
+                       isOwner(incoming().ownerId) &&
+                       isValidProject(incoming());
+      allow update: if isAuthenticated() && isValidId(projectId) &&
+                       isOwner(existing().ownerId) &&
+                       isValidProject(incoming()) &&
+                       incoming().ownerId == existing().ownerId &&
+                       incoming().diff(existing()).affectedKeys().hasOnly(['title', 'updatedAt', 'idea', 'category', 'research', 'outline', 'bookDetails', 'assets']);
+      allow delete: if isAuthenticated() && isValidId(projectId) && isOwner(existing().ownerId);
+
+      match /chapters/{chapterId} {
+        allow get: if isAuthenticated() && isValidId(projectId) && isValidId(chapterId) && isOwner(existing().ownerId);
+        // List explicitly enforces resource.data constraints based on parent project logic mapped directly via denormalized ownerId
+        allow list: if isAuthenticated() && isValidId(projectId) && isOwner(resource.data.ownerId);
+        allow create: if isAuthenticated() && isValidId(projectId) && isValidId(chapterId) &&
+                         isOwner(incoming().ownerId) &&
+                         isValidChapter(incoming()) &&
+                         get(/databases/$(database)/documents/projects/$(projectId)).data.ownerId == request.auth.uid &&
+                         incoming().projectId == projectId;
+        allow update: if isAuthenticated() && isValidId(projectId) && isValidId(chapterId) &&
+                         isOwner(existing().ownerId) &&
+                         isValidChapter(incoming()) &&
+                         incoming().projectId == existing().projectId &&
+                         incoming().ownerId == existing().ownerId &&
+                         incoming().diff(existing()).affectedKeys().hasOnly(['title', 'status', 'order', 'content']);
+        allow delete: if isAuthenticated() && isValidId(projectId) && isValidId(chapterId) && isOwner(existing().ownerId);
+      }
+
+      match /chats/{chatId} {
+        allow get: if isAuthenticated() && isValidId(projectId) && isValidId(chatId) && isOwner(existing().ownerId);
+        allow list: if isAuthenticated() && isValidId(projectId) && isOwner(resource.data.ownerId);
+        allow create: if isAuthenticated() && isValidId(projectId) && isValidId(chatId) &&
+                         isOwner(incoming().ownerId) &&
+                         isValidChat(incoming()) &&
+                         get(/databases/$(database)/documents/projects/$(projectId)).data.ownerId == request.auth.uid &&
+                         incoming().projectId == projectId;
+        allow update: if isAuthenticated() && isValidId(projectId) && isValidId(chatId) &&
+                         isOwner(existing().ownerId) &&
+                         isValidChat(incoming()) &&
+                         incoming().projectId == existing().projectId &&
+                         incoming().ownerId == existing().ownerId &&
+                         incoming().diff(existing()).affectedKeys().hasOnly(['messages']);
+        allow delete: if isAuthenticated() && isValidId(projectId) && isValidId(chatId) && isOwner(existing().ownerId);
+      }
+    }
+  }
+}

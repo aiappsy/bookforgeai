@@ -1,1 +1,20 @@
 @import "tailwindcss";
+
+@media print {
+  body {
+    background: #ffffff !important;
+    color: #000000 !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  /* Hide app UI when printing main window */
+  .no-print, nav, header, sidebar, button, .print-hide {
+    display: none !important;
+  }
+  
+  @page {
+    size: 6in 9in;
+    margin: 0.75in;
+  }
+}
