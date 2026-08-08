@@ -31,11 +31,13 @@ export function HumanizerStudio({
   );
   const [scope, setScope] = useState<'single' | 'all'>('single');
   const [mode, setMode] = useState<'bypass' | 'natural' | 'authorial'>('bypass');
+  const [autoApply, setAutoApply] = useState<boolean>(true);
   const [isHumanizing, setIsHumanizing] = useState(false);
   const [humanizeProgress, setHumanizeProgress] = useState<string>('');
   const [humanizedResult, setHumanizedResult] = useState<string | null>(null);
   const [lastOriginalText, setLastOriginalText] = useState<string>('');
   const [copiedNotice, setCopiedNotice] = useState(false);
+  const [justAppliedNotice, setJustAppliedNotice] = useState<boolean>(false);
 
   const selectedChapter = useMemo(() => {
     return chapters.find(c => c.id === selectedChapterId) || (chapters.length > 0 ? chapters[0] : null);
@@ -68,12 +70,18 @@ export function HumanizerStudio({
     setIsHumanizing(true);
     setLastOriginalText(sourceTextToAnalyze);
     setHumanizedResult(null);
+    setJustAppliedNotice(false);
 
     try {
       if (scope === 'single' && selectedChapter) {
         setHumanizeProgress(`Humanizing "${selectedChapter.title}" with Gemini AI...`);
         const res = await humanizeManuscript(selectedChapter.content, mode, customApiKey, language);
         setHumanizedResult(res);
+
+        if (autoApply) {
+          onUpdateChapterContent(selectedChapter.id, res);
+          setJustAppliedNotice(true);
+        }
       } else {
         // Humanize all chapters sequentially with pacing delay
         const doneChapters = chapters.filter(c => c.status === 'done');
@@ -88,7 +96,7 @@ export function HumanizerStudio({
             const res = await humanizeManuscript(ch.content, mode, customApiKey, language);
             results.push({ id: ch.id, content: res });
             combined += `# ${ch.title}\n\n${res}\n\n`;
-            setHumanizedResult(combined); // update partial result live so work is saved!
+            setHumanizedResult(combined);
           } catch (err: any) {
             console.error(`Rate limit or error on chapter ${i + 1}:`, err);
             if (err.message?.includes('429') || err.message?.includes('RESOURCE_EXHAUSTED')) {
@@ -101,10 +109,14 @@ export function HumanizerStudio({
             }
           }
 
-          // Small 1.5s delay between batch calls to stay within free-tier requests-per-minute (RPM) limits
           if (i < doneChapters.length - 1) {
             await new Promise(r => setTimeout(r, 1500));
           }
+        }
+
+        if (autoApply && results.length > 0) {
+          onUpdateAllChaptersContent(results);
+          setJustAppliedNotice(true);
         }
       }
     } catch (e: any) {
@@ -121,12 +133,10 @@ export function HumanizerStudio({
 
     if (scope === 'single' && selectedChapter) {
       onUpdateChapterContent(selectedChapter.id, humanizedResult);
+      setJustAppliedNotice(true);
       alert(`Applied humanized manuscript to "${selectedChapter.title}"!`);
     } else {
-      // Parse combined text back or update chapters directly
       const doneChapters = chapters.filter(c => c.status === 'done');
-      // If we humanized all chapters sequentially, we can re-split or update
-      // Let's trigger a single chapter or bulk update
       const updated: { id: string; content: string }[] = [];
       const sections = humanizedResult.split(/(?=\n#\s+)/);
       
@@ -139,6 +149,7 @@ export function HumanizerStudio({
 
       if (updated.length > 0) {
         onUpdateAllChaptersContent(updated);
+        setJustAppliedNotice(true);
         alert(`Successfully applied humanized prose across all ${updated.length} chapters!`);
       }
     }
@@ -295,6 +306,19 @@ export function HumanizerStudio({
               </div>
             </div>
 
+            {/* Auto-Apply Checkbox Option */}
+            <div className="flex items-center justify-between pt-1 text-xs">
+              <label className="flex items-center gap-2 cursor-pointer font-medium text-zinc-700 select-none">
+                <input
+                  type="checkbox"
+                  checked={autoApply}
+                  onChange={(e) => setAutoApply(e.target.checked)}
+                  className="w-4 h-4 text-emerald-600 rounded border-zinc-300 focus:ring-emerald-500 cursor-pointer"
+                />
+                <span>Automatically update active chapter manuscript text when humanization finishes</span>
+              </label>
+            </div>
+
             {/* Run Action Button */}
             <button
               onClick={handleRunHumanize}
@@ -313,6 +337,18 @@ export function HumanizerStudio({
                 </>
               )}
             </button>
+
+            {justAppliedNotice && (
+              <div className="p-3 bg-emerald-50 border border-emerald-300 rounded-xl text-xs font-bold text-emerald-900 flex items-center justify-between animate-fade-in">
+                <div className="flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                  <span>Humanized prose applied directly to manuscript workspace!</span>
+                </div>
+                <span className="text-[10px] text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full font-mono">
+                  {resultAiReport ? `${resultAiReport.aiProbability}% AI Score` : 'Updated'}
+                </span>
+              </div>
+            )}
           </div>
 
           {/* Detailed Metric Cards */}

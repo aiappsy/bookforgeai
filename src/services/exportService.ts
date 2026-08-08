@@ -740,46 +740,32 @@ STEP 4: Preview & Publish
   URL.revokeObjectURL(url);
 }
 
-export function exportLandingPageHtml(bookDetails: any, landingCopy: any, coverUrl?: string | null) {
+export function getLandingPageHtmlString(
+  bookDetails: any, 
+  landingCopy: any, 
+  coverUrl?: string | null, 
+  templateType: 'classic' | 'modern' | 'editorial' = 'classic'
+): string {
   const safeTitle = (bookDetails?.title || "Book").replace(/[^a-zA-Z0-9_-]/g, "_");
   const coverImgSrc = coverUrl || "https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?q=80&w=800&auto=format&fit=crop";
 
-  const takeawaysHtml = (landingCopy?.keyTakeaways || [
+  const takeaways = landingCopy?.keyTakeaways || [
     "Master essential principles and frameworks",
     "Actionable step-by-step strategies you can implement today",
     "Real-world case studies and practical insights",
     "Transformative lessons from industry experts"
-  ]).map((item: string) => `
-    <li class="flex items-start space-x-3 text-zinc-700">
-      <svg class="w-6 h-6 text-emerald-500 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
-      <span>${item}</span>
-    </li>
-  `).join('');
+  ];
 
-  const testimonialsHtml = (landingCopy?.testimonials || [
+  const testimonials = landingCopy?.testimonials || [
     { quote: "A masterpiece that completely changed my perspective. Highly recommended!", name: "Sarah Jenkins", title: "Bestselling Author & Book Critic" },
     { quote: "Incredible depth and clarity. Could not put it down once I started.", name: "Dr. Marcus Vance", title: "Literary Reviewer" }
-  ]).map((t: any) => `
-    <div class="bg-white p-6 rounded-2xl border border-zinc-200 shadow-sm flex flex-col justify-between">
-      <p class="text-zinc-600 italic mb-4">"${t.quote}"</p>
-      <div>
-        <h4 class="font-bold text-zinc-900">${t.name}</h4>
-        <p class="text-xs text-indigo-600 font-medium">${t.title}</p>
-      </div>
-    </div>
-  `).join('');
+  ];
 
-  const faqHtml = (landingCopy?.faq || [
+  const faq = landingCopy?.faq || [
     { question: "Where can I buy this book?", answer: "Available on Amazon Kindle, Paperback, Hardcover, and major ebook retailers worldwide." },
     { question: "Is this suitable for beginners?", answer: "Yes! Designed to be accessible, engaging, and valuable for both newcomers and seasoned readers." }
-  ]).map((f: any) => `
-    <div class="bg-zinc-50 p-6 rounded-xl border border-zinc-200">
-      <h3 class="font-semibold text-zinc-900 text-lg mb-2">${f.question}</h3>
-      <p class="text-zinc-600 text-sm leading-relaxed">${f.answer}</p>
-    </div>
-  `).join('');
+  ];
 
-  // Social Media badges builder
   const socials = bookDetails?.socials || {};
   const socialLinksHtml = [
     socials.website ? `<a href="${socials.website}" target="_blank" rel="noopener noreferrer" class="px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white text-xs font-medium inline-flex items-center gap-1.5 transition-colors">🌐 Website</a>` : '',
@@ -790,7 +776,335 @@ export function exportLandingPageHtml(bookDetails: any, landingCopy: any, coverU
     socials.amazonAuthor ? `<a href="${socials.amazonAuthor}" target="_blank" rel="noopener noreferrer" class="px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white text-xs font-medium inline-flex items-center gap-1.5 transition-colors">🛒 Amazon Author Central</a>` : ''
   ].filter(Boolean).join(' ');
 
-  const htmlContent = `<!DOCTYPE html>
+  // Template 2: Modern Tech & SaaS Minimal (Dark Theme with neon accents)
+  if (templateType === 'modern') {
+    const takeawaysModern = takeaways.map((item: string) => `
+      <div class="bg-zinc-900/80 p-5 rounded-2xl border border-zinc-800 flex items-start gap-3 hover:border-emerald-500/50 transition-colors">
+        <div class="w-7 h-7 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 flex items-center justify-center shrink-0 text-sm font-bold">✓</div>
+        <p class="text-zinc-300 text-sm leading-relaxed">${item}</p>
+      </div>
+    `).join('');
+
+    const testimonialsModern = testimonials.map((t: any) => `
+      <div class="bg-zinc-900/60 p-6 rounded-2xl border border-zinc-800 flex flex-col justify-between">
+        <p class="text-zinc-300 text-sm italic mb-4 leading-relaxed">"${t.quote}"</p>
+        <div class="flex items-center gap-3 pt-3 border-t border-zinc-800/80">
+          <div class="w-8 h-8 rounded-full bg-gradient-to-tr from-indigo-500 to-emerald-400 flex items-center justify-center text-xs font-extrabold text-black">
+            ${t.name.charAt(0)}
+          </div>
+          <div>
+            <h4 class="font-bold text-white text-sm">${t.name}</h4>
+            <p class="text-xs text-emerald-400 font-mono">${t.title}</p>
+          </div>
+        </div>
+      </div>
+    `).join('');
+
+    const faqModern = faq.map((f: any) => `
+      <div class="bg-zinc-900/80 p-6 rounded-xl border border-zinc-800">
+        <h3 class="font-bold text-white text-base mb-2 flex items-center gap-2">
+          <span class="text-emerald-400 font-mono text-xs">//</span> ${f.question}
+        </h3>
+        <p class="text-zinc-400 text-sm leading-relaxed">${f.answer}</p>
+      </div>
+    `).join('');
+
+    return `<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${bookDetails?.title || 'Book Launch'} - Official Release</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+  <style>
+    body { font-family: 'Plus Jakarta Sans', sans-serif; }
+    .font-mono { font-family: 'JetBrains Mono', monospace; }
+  </style>
+</head>
+<body class="bg-zinc-950 text-zinc-100 antialiased selection:bg-emerald-500 selection:text-black pb-24">
+
+  <!-- Sticky Header -->
+  <nav class="sticky top-0 z-50 bg-zinc-950/80 backdrop-blur-xl border-b border-zinc-800/80 py-4 px-6 md:px-12 flex items-center justify-between">
+    <div class="font-extrabold text-lg tracking-tight text-white flex items-center gap-2 font-mono">
+      <span class="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span>
+      ${bookDetails?.title || 'Book Launch'}
+    </div>
+    <a href="#buy" class="bg-emerald-500 hover:bg-emerald-400 text-black font-bold px-5 py-2.5 rounded-xl text-xs transition-all shadow-lg shadow-emerald-500/20">
+      Get Access Now
+    </a>
+  </nav>
+
+  <!-- Hero Section -->
+  <header class="max-w-6xl mx-auto px-6 py-16 md:py-24 grid grid-cols-1 md:grid-cols-12 gap-12 items-center">
+    <div class="md:col-span-7 space-y-6">
+      <div class="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs font-mono font-bold">
+        <span>🔥</span> NEW RELEASE // BY ${bookDetails?.authorName?.toUpperCase() || 'AUTHOR'}
+      </div>
+      <h1 class="text-4xl sm:text-5xl md:text-6xl font-black text-white tracking-tight leading-tight">
+        ${landingCopy?.heroHeadline || bookDetails?.title || 'Transformative Blueprint'}
+      </h1>
+      <p class="text-lg md:text-xl text-zinc-400 font-normal leading-relaxed">
+        ${landingCopy?.heroSubheadline || bookDetails?.subtitle || bookDetails?.description?.slice(0, 180) || ''}
+      </p>
+
+      <!-- Stat Badges -->
+      <div class="grid grid-cols-3 gap-4 pt-2 border-y border-zinc-800/80 py-4">
+        <div>
+          <div class="text-2xl font-black text-emerald-400">4.9 ★</div>
+          <div class="text-xs text-zinc-500 font-mono">Reader Rating</div>
+        </div>
+        <div>
+          <div class="text-2xl font-black text-white">100%</div>
+          <div class="text-xs text-zinc-500 font-mono">Original Content</div>
+        </div>
+        <div>
+          <div class="text-2xl font-black text-indigo-400">Instant</div>
+          <div class="text-xs text-zinc-500 font-mono">Global Delivery</div>
+        </div>
+      </div>
+
+      <div class="pt-4 flex flex-col sm:flex-row items-center gap-4" id="buy">
+        <a href="#" class="w-full sm:w-auto bg-gradient-to-r from-emerald-500 to-teal-400 hover:from-emerald-400 hover:to-teal-300 text-black text-center font-extrabold px-8 py-4 rounded-xl text-base transition-all shadow-xl shadow-emerald-500/20">
+          ${landingCopy?.heroCtaText || 'Claim Your Copy Now'}
+        </a>
+        <a href="#sample" class="w-full sm:w-auto bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-200 text-center font-bold px-6 py-4 rounded-xl text-base transition-all">
+          Preview Chapter
+        </a>
+      </div>
+    </div>
+
+    <div class="md:col-span-5 flex justify-center">
+      <div class="relative">
+        <div class="absolute -inset-1 bg-gradient-to-tr from-emerald-500 to-indigo-600 rounded-2xl blur-2xl opacity-40"></div>
+        <img src="${coverImgSrc}" alt="Book Cover" class="relative rounded-2xl shadow-2xl w-64 md:w-80 object-cover border border-zinc-700/80" />
+      </div>
+    </div>
+  </header>
+
+  <!-- Key Takeaways -->
+  <section class="max-w-6xl mx-auto px-6 py-16">
+    <div class="text-center mb-12">
+      <span class="text-xs font-mono font-bold text-emerald-400 uppercase tracking-widest">// Core Value</span>
+      <h2 class="text-3xl font-extrabold text-white mt-1">Key Frameworks & Insights</h2>
+    </div>
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+      ${takeawaysModern}
+    </div>
+  </section>
+
+  <!-- Praise & Reviews -->
+  <section class="max-w-6xl mx-auto px-6 py-16 border-t border-zinc-900">
+    <div class="text-center mb-12">
+      <span class="text-xs font-mono font-bold text-indigo-400 uppercase tracking-widest">// Early Praise</span>
+      <h2 class="text-3xl font-extrabold text-white mt-1">What Industry Leaders Say</h2>
+    </div>
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+      ${testimonialsModern}
+    </div>
+  </section>
+
+  <!-- Author Spotlight -->
+  <section class="max-w-4xl mx-auto px-6 py-16">
+    <div class="bg-gradient-to-r from-zinc-900 to-zinc-900/60 p-8 sm:p-12 rounded-3xl border border-zinc-800 flex flex-col md:flex-row items-center gap-8">
+      <div class="w-24 h-24 rounded-2xl bg-gradient-to-tr from-emerald-500 to-teal-400 text-black font-black text-3xl flex items-center justify-center shrink-0">
+        ${(bookDetails?.authorName || 'A').charAt(0)}
+      </div>
+      <div class="space-y-3 text-center md:text-left">
+        <h3 class="text-2xl font-bold text-white">About ${bookDetails?.authorName || 'The Author'}</h3>
+        <p class="text-zinc-400 text-sm leading-relaxed">${landingCopy?.authorBio || bookDetails?.aboutAuthor || bookDetails?.description || ''}</p>
+        ${socialLinksHtml ? `<div class="pt-2 flex flex-wrap gap-2 justify-center md:justify-start">${socialLinksHtml}</div>` : ''}
+      </div>
+    </div>
+  </section>
+
+  <!-- FAQ -->
+  <section class="max-w-4xl mx-auto px-6 py-16 border-t border-zinc-900">
+    <div class="text-center mb-12">
+      <h2 class="text-3xl font-extrabold text-white">Frequently Asked Questions</h2>
+    </div>
+    <div class="space-y-4">
+      ${faqModern}
+    </div>
+  </section>
+
+  <!-- Sticky Bottom Buy Bar -->
+  <div class="fixed bottom-0 left-0 right-0 z-50 bg-zinc-900/90 backdrop-blur-xl border-t border-zinc-800 px-6 py-3">
+    <div class="max-w-5xl mx-auto flex items-center justify-between gap-4">
+      <div class="hidden sm:flex items-center gap-3">
+        <img src="${coverImgSrc}" class="w-10 h-12 object-cover rounded shadow border border-zinc-700" />
+        <div>
+          <div class="text-xs font-bold text-white truncate max-w-xs">${bookDetails?.title || 'Book Title'}</div>
+          <div class="text-[10px] text-zinc-400">By ${bookDetails?.authorName || 'Author'}</div>
+        </div>
+      </div>
+      <a href="#buy" class="w-full sm:w-auto bg-emerald-500 hover:bg-emerald-400 text-black font-extrabold px-6 py-3 rounded-xl text-xs transition-all text-center shadow-lg shadow-emerald-500/20">
+        ${landingCopy?.heroCtaText || 'Get Your Copy Now'}
+      </a>
+    </div>
+  </div>
+
+</body>
+</html>`;
+  }
+
+  // Template 3: High-Impact Author Brand & Editorial Magazine (Parchment/Warm Luxury Theme)
+  if (templateType === 'editorial') {
+    const takeawaysEditorial = takeaways.map((item: string) => `
+      <li class="flex items-start gap-3 text-stone-800 py-3 border-b border-stone-200/80">
+        <span class="text-amber-700 font-serif text-lg font-bold">✦</span>
+        <span class="text-stone-700 text-base leading-relaxed font-serif">${item}</span>
+      </li>
+    `).join('');
+
+    const testimonialsEditorial = testimonials.map((t: any) => `
+      <div class="bg-white p-8 rounded-none border-l-4 border-amber-700 shadow-sm space-y-4">
+        <p class="text-stone-800 font-serif italic text-base leading-relaxed">"${t.quote}"</p>
+        <div class="pt-2">
+          <div class="font-bold text-stone-900 text-sm tracking-wide font-sans uppercase">${t.name}</div>
+          <div class="text-xs text-amber-800 font-serif">${t.title}</div>
+        </div>
+      </div>
+    `).join('');
+
+    const faqEditorial = faq.map((f: any) => `
+      <div class="bg-white p-6 border border-stone-200">
+        <h3 class="font-serif font-bold text-stone-900 text-lg mb-2">${f.question}</h3>
+        <p class="text-stone-600 text-sm leading-relaxed">${f.answer}</p>
+      </div>
+    `).join('');
+
+    return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${bookDetails?.title || 'Book Landing Page'}</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400;0,600;0,700;1,400;1,600&family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    body { font-family: 'Plus Jakarta Sans', sans-serif; }
+    .font-serif { font-family: 'Lora', serif; }
+  </style>
+</head>
+<body class="bg-[#fdfbf7] text-[#1c1917] antialiased selection:bg-amber-200 selection:text-amber-900">
+
+  <!-- Editorial Top Bar -->
+  <div class="bg-[#1c1917] text-stone-300 py-2.5 px-6 text-center text-xs font-serif tracking-widest uppercase border-b border-amber-700">
+    OFFICIAL AUTHOR EDITION &bull; ${bookDetails?.authorName || 'AUTHOR'}
+  </div>
+
+  <!-- Hero Section -->
+  <header class="max-w-5xl mx-auto px-6 py-16 md:py-20 text-center space-y-8">
+    <div class="inline-block border-y border-amber-700/60 py-1 px-4 text-xs font-serif font-bold tracking-widest text-amber-900 uppercase">
+      A NEW RELEASE IN ${bookDetails?.genre?.toUpperCase() || 'GENERAL NON-FICTION'}
+    </div>
+
+    <h1 class="font-serif text-4xl sm:text-5xl md:text-6xl font-bold text-stone-900 leading-tight max-w-4xl mx-auto">
+      ${landingCopy?.heroHeadline || bookDetails?.title || 'An Essential Masterpiece'}
+    </h1>
+
+    <p class="text-lg md:text-xl text-stone-600 font-serif italic max-w-2xl mx-auto leading-relaxed">
+      ${landingCopy?.heroSubheadline || bookDetails?.subtitle || bookDetails?.description?.slice(0, 180) || ''}
+    </p>
+
+    <div class="pt-6 flex justify-center">
+      <div class="relative p-3 bg-white border border-stone-300 shadow-2xl max-w-sm">
+        <img src="${coverImgSrc}" alt="Book Cover" class="w-64 sm:w-72 object-cover" />
+      </div>
+    </div>
+
+    <div class="pt-6 flex flex-col sm:flex-row justify-center items-center gap-4" id="buy">
+      <a href="#" class="bg-[#1c1917] hover:bg-stone-800 text-amber-100 font-serif font-bold px-8 py-4 text-base transition-all shadow-md border border-amber-700/40">
+        ${landingCopy?.heroCtaText || 'Order Hardcover & eBook'}
+      </a>
+    </div>
+  </header>
+
+  <!-- Author Letter / Note -->
+  <section class="max-w-3xl mx-auto px-6 py-16 border-t border-stone-200">
+    <div class="bg-white p-8 md:p-12 border border-stone-300 space-y-6 shadow-xs">
+      <h2 class="font-serif text-2xl font-bold text-stone-900 border-b border-amber-700/30 pb-3">
+        A Letter From ${bookDetails?.authorName || 'The Author'}
+      </h2>
+      <p class="font-serif text-stone-700 text-base leading-relaxed italic">
+        "${landingCopy?.authorBio || bookDetails?.description || 'Thank you for embarking on this journey with me. This book encapsulates years of research, trial, and insight designed to offer you timeless clarity.'}"
+      </p>
+      <div class="pt-4 flex items-center justify-between text-xs font-serif text-stone-500 border-t border-stone-100">
+        <span>Author & Scholar</span>
+        <span class="font-bold text-stone-800">${bookDetails?.authorName || ''}</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- Key Discoveries -->
+  <section class="max-w-4xl mx-auto px-6 py-16">
+    <h2 class="font-serif text-3xl font-bold text-stone-900 text-center mb-12">Inside This Volume</h2>
+    <ul class="space-y-2">
+      ${takeawaysEditorial}
+    </ul>
+  </section>
+
+  <!-- Editorial Reviews -->
+  <section class="max-w-5xl mx-auto px-6 py-16 border-t border-stone-200">
+    <h2 class="font-serif text-3xl font-bold text-stone-900 text-center mb-12">Critical Acclaim</h2>
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+      ${testimonialsEditorial}
+    </div>
+  </section>
+
+  <!-- FAQ -->
+  <section class="max-w-3xl mx-auto px-6 py-16 border-t border-stone-200">
+    <h2 class="font-serif text-3xl font-bold text-stone-900 text-center mb-12">Reader Inquiries</h2>
+    <div class="space-y-4">
+      ${faqEditorial}
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer class="bg-[#1c1917] text-stone-400 py-16 text-center px-6 border-t border-amber-700">
+    <div class="max-w-2xl mx-auto space-y-6">
+      <h2 class="font-serif text-3xl font-bold text-stone-100">Secure Your Collector's Edition</h2>
+      <div>
+        <a href="#buy" class="inline-block bg-amber-700 hover:bg-amber-600 text-stone-900 font-serif font-bold px-8 py-4 text-base transition-all">
+          ${landingCopy?.heroCtaText || 'Order Your Copy'}
+        </a>
+      </div>
+      ${socialLinksHtml ? `<div class="pt-4 flex flex-wrap gap-2 justify-center">${socialLinksHtml}</div>` : ''}
+      <p class="text-xs text-stone-500 pt-8 font-serif">&copy; ${new Date().getFullYear()} ${bookDetails?.authorName || 'Author'}. Published Independently.</p>
+    </div>
+  </footer>
+
+</body>
+</html>`;
+  }
+
+  // Template 1: Classic Bestseller (Default)
+  const takeawaysHtml = takeaways.map((item: string) => `
+    <li class="flex items-start space-x-3 text-zinc-700">
+      <svg class="w-6 h-6 text-emerald-500 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+      <span>${item}</span>
+    </li>
+  `).join('');
+
+  const testimonialsHtml = testimonials.map((t: any) => `
+    <div class="bg-white p-6 rounded-2xl border border-zinc-200 shadow-sm flex flex-col justify-between">
+      <p class="text-zinc-600 italic mb-4">"${t.quote}"</p>
+      <div>
+        <h4 class="font-bold text-zinc-900">${t.name}</h4>
+        <p class="text-xs text-indigo-600 font-medium">${t.title}</p>
+      </div>
+    </div>
+  `).join('');
+
+  const faqHtml = faq.map((f: any) => `
+    <div class="bg-zinc-50 p-6 rounded-xl border border-zinc-200">
+      <h3 class="font-semibold text-zinc-900 text-lg mb-2">${f.question}</h3>
+      <p class="text-zinc-600 text-sm leading-relaxed">${f.answer}</p>
+    </div>
+  `).join('');
+
+  return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
@@ -916,12 +1230,22 @@ export function exportLandingPageHtml(bookDetails: any, landingCopy: any, coverU
 
 </body>
 </html>`;
+}
+
+export function exportLandingPageHtml(
+  bookDetails: any, 
+  landingCopy: any, 
+  coverUrl?: string | null, 
+  templateType: 'classic' | 'modern' | 'editorial' = 'classic'
+) {
+  const safeTitle = (bookDetails?.title || "Book").replace(/[^a-zA-Z0-9_-]/g, "_");
+  const htmlContent = getLandingPageHtmlString(bookDetails, landingCopy, coverUrl, templateType);
 
   const blob = new Blob([htmlContent], { type: 'text/html' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `${safeTitle}_Promotional_Landing_Page.html`;
+  a.download = `${safeTitle}_Landing_Page_${templateType}.html`;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);

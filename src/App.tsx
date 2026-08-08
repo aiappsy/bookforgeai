@@ -27,10 +27,11 @@ import {
   generateBookKeywords,
   extractLearnedRulesFromFeedback,
   summarizeChapterForContinuity,
+  extractExistingCharacterNames,
   LearnedRule,
   ContinuityContext
 } from './services/geminiService';
-import { exportToDocx, exportPublishingZipBundle, exportLandingPageHtml } from './services/exportService';
+import { exportToDocx, exportPublishingZipBundle, exportLandingPageHtml, getLandingPageHtmlString } from './services/exportService';
 import { extractTextFromFile } from './utils/fileParser';
 import { saveProject, loadProject, getProjectsList, deleteProject, getUserSettings, saveUserSettings, saveEmergencySnapshot, scanAllLocalBackups, savePublishedLandingPage, getPublishedLandingPage, deletePublishedLandingPage, PublishedLandingData } from './services/storage';
 import { auth, loginWithGoogle, logoutUser } from './services/firebase';
@@ -1124,7 +1125,7 @@ export default function App() {
     return localStorage.getItem('elevenlabs_api_key') || DEFAULT_ELEVENLABS_KEY;
   });
   const [descViewTab, setDescViewTab] = useState<'formatted' | 'html'>('formatted');
-  const [showCoverTextOverlay, setShowCoverTextOverlay] = useState<boolean>(false);
+  const [showCoverTextOverlay, setShowCoverTextOverlay] = useState<boolean>(true);
   const [showCoverEditor, setShowCoverEditor] = useState<boolean>(false);
   const [coverSaveNotice, setCoverSaveNotice] = useState<boolean>(false);
   const [coverTextPosition, setCoverTextPosition] = useState<'top' | 'middle' | 'bottom'>('top');
@@ -1146,6 +1147,54 @@ export default function App() {
 
   // Marketing & PR Studio State
   const [marketingSubTab, setMarketingSubTab] = useState<'press_release' | 'beta_readers' | 'audiobook_script' | 'social_campaign' | 'email_sequence' | 'media_pitch' | 'landing_page' | 'strategy_roadmap'>('press_release');
+  const [selectedLandingTemplate, setSelectedLandingTemplate] = useState<'classic' | 'modern' | 'editorial'>('classic');
+
+  // Custom Uploaded Cover Design Templates
+  const [uploadedCoverTemplates, setUploadedCoverTemplates] = useState<Array<{ id: string; name: string; url: string }>>(() => {
+    try {
+      const saved = localStorage.getItem('uploaded_cover_templates');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const handleUploadCoverTemplate = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const dataUrl = event.target?.result as string;
+      if (dataUrl) {
+        const newTemplate = {
+          id: 'tpl_' + Date.now(),
+          name: file.name.replace(/\.[^/.]+$/, ""),
+          url: dataUrl
+        };
+        setUploadedCoverTemplates(prev => {
+          const updated = [newTemplate, ...prev];
+          try {
+            localStorage.setItem('uploaded_cover_templates', JSON.stringify(updated.slice(0, 10)));
+          } catch (err) {}
+          return updated;
+        });
+        setAssets(prev => ({ ...prev, coverUrl: dataUrl }));
+        setShowCoverTextOverlay(true);
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleDeleteUploadedTemplate = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setUploadedCoverTemplates(prev => {
+      const updated = prev.filter(t => t.id !== id);
+      try {
+        localStorage.setItem('uploaded_cover_templates', JSON.stringify(updated));
+      } catch {}
+      return updated;
+    });
+  };
 
   const [pressReleaseContent, setPressReleaseContent] = useState<string>('');
   const [targetAudienceInput, setTargetAudienceInput] = useState<string>('');
@@ -1740,10 +1789,13 @@ export default function App() {
       const prevCh = chIndex > 0 ? chapters[chIndex - 1] : null;
       const prevEnding = prevCh?.content ? prevCh.content.trim().substring(Math.max(0, prevCh.content.trim().length - 1200)) : '';
 
+      const existingNames = extractExistingCharacterNames(outline + '\n' + preceding.map(c => c.content || '').join('\n'));
+
       const continuityCtx: ContinuityContext = {
         precedingChapterSummaries: precedingSummaries,
         previousChapterEnding: prevEnding,
-        learnedRules: continuityMemory.learnedRules
+        learnedRules: continuityMemory.learnedRules,
+        existingCharacterNames: existingNames
       };
 
       const effectiveTopic = (idea && idea.trim()) || (bookDetails?.title && bookDetails.title.trim()) || bookDetails?.description || 'the manuscript topic';
@@ -2018,10 +2070,125 @@ export default function App() {
     const formatContentToBookHtml = (content: string) => {
       if (!content) return '<p class="empty-ch">No text written for this chapter yet.</p>';
       
-      const blocks = content.split(/\n\n+/);
-      return blocks.map((block) => {
+      let html = content.replace(/\r\n/g, '\n');
+
+      // 1. Extract and format Code Blocks / ASCII Diagrams (``` ... ```)
+      const codeBlocks: string[] = [];
+      html = html.replace(/```([a-zA-Z0-9_-]*)\n?([\s\S]*?)```/g, (_, _lang, code) => {
+        const index = codeBlocks.length;
+        const cleanCode = code.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').trimEnd();
+        codeBlocks.push(`<pre class="ch-code-block"><code>${cleanCode}</code></pre>`);
+        return `\n\n__CODE_BLOCK_${index}__\n\n`;
+      });
+
+      // 2. Extract and format Markdown Tables (| ... |)
+      const tableBlocks: string[] = [];
+      html = html.replace(/((?:\|[^\n]+\|\n?)+)/g, (match) => {
+        const lines = match.trim().split('\n').filter(l => l.trim().startsWith('|'));
+        if (lines.length < 2) return match;
+        
+        let tableHtml = '<table class="ch-table">';
+        let inTbody = false;
+        
+        lines.forEach((line, idx) => {
+          if (/^\|[\s\-:|]+\|$/.test(line.trim())) return; // skip divider
+          const cells = line.split('|').slice(1, -1).map(c => c.trim());
+          if (idx === 0) {
+            tableHtml += '<thead><tr>';
+            cells.forEach(c => {
+              const formatted = c.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').replace(/\*(.*?)\*/g, '<em>$1</em>');
+              tableHtml += `<th>${formatted}</th>`;
+            });
+            tableHtml += '</tr></thead>';
+          } else {
+            if (!inTbody) {
+              tableHtml += '<tbody>';
+              inTbody = true;
+            }
+            tableHtml += '<tr>';
+            cells.forEach(c => {
+              const formatted = c.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').replace(/\*(.*?)\*/g, '<em>$1</em>');
+              tableHtml += `<td>${formatted}</td>`;
+            });
+            tableHtml += '</tr>';
+          }
+        });
+        if (inTbody) tableHtml += '</tbody>';
+        tableHtml += '</table>';
+
+        const index = tableBlocks.length;
+        tableBlocks.push(tableHtml);
+        return `\n\n__TABLE_BLOCK_${index}__\n\n`;
+      });
+
+      // 3. Extract Blockquotes (> ...)
+      const quoteBlocks: string[] = [];
+      html = html.replace(/((?:^>[^\n]*\n?)+)/gm, (match) => {
+        const quoteText = match
+          .split('\n')
+          .map(l => l.replace(/^>\s?/, ''))
+          .join('\n')
+          .trim();
+        if (!quoteText) return match;
+        
+        const formattedQuote = quoteText
+          .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+          .replace(/\*(.*?)\*/g, '<em>$1</em>')
+          .replace(/_(.*?)_/g, '<em>$1</em>')
+          .replace(/\n/g, '<br/>');
+
+        const quoteHtml = `<blockquote class="ch-quote"><p>${formattedQuote}</p></blockquote>`;
+        const index = quoteBlocks.length;
+        quoteBlocks.push(quoteHtml);
+        return `\n\n__QUOTE_BLOCK_${index}__\n\n`;
+      });
+
+      // 4. Handle Image tags / empty placeholders like ![alt]() or ![alt](url)
+      html = html.replace(/!\[(.*?)\]\((.*?)\)/g, (_, alt, url) => {
+        const cleanUrl = url ? url.trim() : '';
+        const cleanAlt = alt ? alt.trim() : '';
+        if (cleanUrl.startsWith('data:') || cleanUrl.startsWith('http')) {
+          return `<figure class="ch-figure"><img src="${cleanUrl}" alt="${cleanAlt}" /><figcaption>${cleanAlt}</figcaption></figure>`;
+        }
+        if (cleanAlt) {
+          return `<div class="ch-illustration-box">🖼️ <strong>Visual Concept:</strong> ${cleanAlt}</div>`;
+        }
+        return '';
+      });
+
+      // 5. Clean up LaTeX formulas like $$\text{...}$$ or $...$
+      html = html.replace(/\$\$\s*([\s\S]*?)\s*\$\$/g, (_, formula) => {
+        const cleanFormula = formula
+          .replace(/\\text\{(.*?)\}/g, '$1')
+          .replace(/\\frac\{(.*?)\}\{(.*?)\}/g, '($1 / $2)')
+          .replace(/\\/g, '')
+          .trim();
+        return `<div class="ch-formula-box"><strong>Formula:</strong> ${cleanFormula}</div>`;
+      });
+
+      // 6. Split into blocks and process remaining elements
+      const rawBlocks = html.split(/\n\n+/);
+      const processedBlocks = rawBlocks.map((block) => {
         const trimmed = block.trim();
         if (!trimmed) return '';
+
+        if (trimmed.startsWith('__CODE_BLOCK_') && trimmed.endsWith('__')) {
+          const idx = parseInt(trimmed.replace('__CODE_BLOCK_', '').replace('__', ''), 10);
+          return codeBlocks[idx] || '';
+        }
+        if (trimmed.startsWith('__TABLE_BLOCK_') && trimmed.endsWith('__')) {
+          const idx = parseInt(trimmed.replace('__TABLE_BLOCK_', '').replace('__', ''), 10);
+          return tableBlocks[idx] || '';
+        }
+        if (trimmed.startsWith('__QUOTE_BLOCK_') && trimmed.endsWith('__')) {
+          const idx = parseInt(trimmed.replace('__QUOTE_BLOCK_', '').replace('__', ''), 10);
+          return quoteBlocks[idx] || '';
+        }
+
+        // Headings
+        if (trimmed.startsWith('#### ')) {
+          return `<h4 class="ch-h4">${trimmed.replace(/^####\s+/, '')}</h4>`;
+        }
         if (trimmed.startsWith('### ')) {
           return `<h3 class="ch-h3">${trimmed.replace(/^###\s+/, '')}</h3>`;
         }
@@ -2031,19 +2198,65 @@ export default function App() {
         if (trimmed.startsWith('# ')) {
           return `<h2 class="ch-h2">${trimmed.replace(/^#\s+/, '')}</h2>`;
         }
-        if (trimmed.startsWith('- ') || trimmed.startsWith('* ')) {
-          const items = trimmed.split('\n').map(item => `<li>${item.replace(/^[-*]\s+/, '')}</li>`).join('');
+
+        // Horizontal Dividers
+        if (/^(\-\-\-|\*\*\*|===+)$/.test(trimmed)) {
+          return `<div class="ch-divider"><hr /></div>`;
+        }
+
+        // Unordered lists (- item or * item)
+        if (/^[\-\*]\s+/m.test(trimmed)) {
+          const items = trimmed
+            .split('\n')
+            .filter(l => l.trim().match(/^[\-\*]\s+/))
+            .map(item => {
+              const cleaned = item.replace(/^[\-\*]\s+/, '')
+                .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+                .replace(/\*(.*?)\*/g, '<em>$1</em>')
+                .replace(/_(.*?)_/g, '<em>$1</em>');
+              return `<li>${cleaned}</li>`;
+            })
+            .join('');
           return `<ul class="ch-list">${items}</ul>`;
         }
-        
+
+        // Ordered lists (1. item, 2. item)
+        if (/^\d+\.\s+/m.test(trimmed)) {
+          const items = trimmed
+            .split('\n')
+            .filter(l => l.trim().match(/^\d+\.\s+/))
+            .map(item => {
+              const cleaned = item.replace(/^\d+\.\s+/, '')
+                .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+                .replace(/\*(.*?)\*/g, '<em>$1</em>')
+                .replace(/_(.*?)_/g, '<em>$1</em>');
+              return `<li>${cleaned}</li>`;
+            })
+            .join('');
+          return `<ol class="ch-list-ordered">${items}</ol>`;
+        }
+
+        // Auto-detect unfenced ASCII Art / Diagrams
+        const isAsciiDiagram = /[\┌\┐\└\┘\├\┤\┬\┴\┼\─\│\▼\▲\►\◄\↖\↗\↘\↙\═\║\╔\╗\╚\╝\+\-\|\/\\]{3,}/.test(trimmed) ||
+          (trimmed.split('\n').length >= 2 && /[\─\│\▼\▲\►\◄\<\>\-\+\|\[\]]{2,}/.test(trimmed) && !trimmed.match(/^[a-zA-Z0-9\s,\.\?'"-]+$/));
+
+        if (isAsciiDiagram) {
+          const safeDiagram = trimmed.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+          return `<pre class="ch-code-block"><code>${safeDiagram}</code></pre>`;
+        }
+
+        // Regular Paragraph
         const cleanP = trimmed
           .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
           .replace(/\*(.*?)\*/g, '<em>$1</em>')
           .replace(/_(.*?)_/g, '<em>$1</em>')
+          .replace(/`([^`]+)`/g, '<code class="ch-inline-code">$1</code>')
           .replace(/\n/g, '<br/>');
-          
+
         return `<p class="ch-p">${cleanP}</p>`;
-      }).join('\n');
+      });
+
+      return processedBlocks.filter(Boolean).join('\n');
     };
 
     const htmlContent = `<!DOCTYPE html>
@@ -2268,6 +2481,10 @@ export default function App() {
     .ch-p:first-of-type,
     .ch-h2 + .ch-p,
     .ch-h3 + .ch-p,
+    .ch-h4 + .ch-p,
+    pre.ch-code-block + .ch-p,
+    table.ch-table + .ch-p,
+    blockquote.ch-quote + .ch-p,
     .empty-ch {
       text-indent: 0 !important;
     }
@@ -2285,12 +2502,146 @@ export default function App() {
       margin-top: 1.4em;
       margin-bottom: 0.4em;
     }
-    .ch-list {
-      margin: 0.8em 0 0.8em 1.5em;
-      padding: 0;
-    }
-    .ch-list li {
+    .ch-h4 {
+      font-size: 10.5pt;
+      font-weight: bold;
+      margin-top: 1.2em;
       margin-bottom: 0.3em;
+    }
+
+    /* Code Blocks & ASCII Diagrams */
+    pre.ch-code-block {
+      font-family: "Courier New", "Cascadia Code", "SFMono-Regular", Consolas, monospace !important;
+      font-size: 8.5pt !important;
+      line-height: 1.35 !important;
+      background: #f8fafc !important;
+      border: 1px solid #cbd5e1 !important;
+      border-radius: 6px !important;
+      padding: 10px 14px !important;
+      margin: 1.2em 0 !important;
+      white-space: pre !important;
+      overflow-x: auto !important;
+      text-indent: 0 !important;
+      page-break-inside: avoid;
+      color: #0f172a !important;
+    }
+    pre.ch-code-block code {
+      font-family: inherit !important;
+      font-size: inherit !important;
+      background: transparent !important;
+      padding: 0 !important;
+      border: none !important;
+    }
+
+    /* Tables */
+    table.ch-table {
+      width: 100% !important;
+      border-collapse: collapse !important;
+      margin: 1.4em 0 !important;
+      font-size: 9.5pt !important;
+      line-height: 1.4 !important;
+      page-break-inside: avoid;
+      text-indent: 0 !important;
+    }
+    table.ch-table th, table.ch-table td {
+      border: 1px solid #94a3b8 !important;
+      padding: 6px 10px !important;
+      text-align: left !important;
+      vertical-align: top !important;
+    }
+    table.ch-table th {
+      background: #f1f5f9 !important;
+      font-weight: bold !important;
+      color: #0f172a !important;
+    }
+
+    /* Blockquotes */
+    blockquote.ch-quote {
+      border-left: 3px solid #3b82f6 !important;
+      background: #f8fafc !important;
+      margin: 1.2em 0 !important;
+      padding: 10px 16px !important;
+      color: #334155 !important;
+      font-style: italic !important;
+      text-indent: 0 !important;
+      border-radius: 0 6px 6px 0 !important;
+      page-break-inside: avoid;
+    }
+    blockquote.ch-quote p {
+      text-indent: 0 !important;
+      margin: 0 !important;
+      padding: 0 !important;
+    }
+
+    /* Inline Code & Formula Boxes */
+    code.ch-inline-code {
+      font-family: "Courier New", monospace !important;
+      background: #f1f5f9 !important;
+      border: 1px solid #e2e8f0 !important;
+      padding: 2px 5px !important;
+      border-radius: 4px !important;
+      font-size: 9pt !important;
+      color: #0f172a !important;
+    }
+    .ch-formula-box {
+      background: #f0fdf4 !important;
+      border: 1px solid #bbf7d0 !important;
+      border-radius: 6px !important;
+      padding: 10px 14px !important;
+      margin: 1.2em 0 !important;
+      font-size: 9.5pt !important;
+      color: #166534 !important;
+      text-indent: 0 !important;
+      page-break-inside: avoid;
+    }
+    .ch-illustration-box {
+      background: #faf5ff !important;
+      border: 1px dashed #d8b4fe !important;
+      border-radius: 6px !important;
+      padding: 10px 14px !important;
+      margin: 1.2em 0 !important;
+      font-size: 9.5pt !important;
+      color: #6b21a8 !important;
+      text-indent: 0 !important;
+      page-break-inside: avoid;
+    }
+
+    /* Lists & Dividers */
+    .ch-list, .ch-list-ordered {
+      margin: 0.8em 0 0.8em 1.8em !important;
+      padding: 0 !important;
+      text-indent: 0 !important;
+    }
+    .ch-list li, .ch-list-ordered li {
+      margin-bottom: 0.35em !important;
+      line-height: 1.5 !important;
+      text-indent: 0 !important;
+    }
+    .ch-divider {
+      margin: 1.5em 0 !important;
+      text-align: center !important;
+    }
+    .ch-divider hr {
+      border: 0 !important;
+      border-top: 1px solid #cbd5e1 !important;
+      margin: 0 !important;
+    }
+    .ch-figure {
+      margin: 1.2em 0 !important;
+      text-align: center !important;
+      page-break-inside: avoid;
+    }
+    .ch-figure img {
+      max-width: 100% !important;
+      height: auto !important;
+      border-radius: 4px !important;
+      border: 1px solid #e2e8f0 !important;
+    }
+    .ch-figure figcaption {
+      font-size: 9pt !important;
+      color: #64748b !important;
+      font-style: italic !important;
+      margin-top: 6px !important;
     }
     
     .author-page {
@@ -2469,11 +2820,34 @@ export default function App() {
       alert("Metadata generation failed. Make sure your API key has text generation enabled. " + (e.message || ""));
     }
 
+    let blurb = '';
     try {
       setGeneratingStep('Agent: Art Director is designing Cover...');
-      cover = await createCover(idea, customApiKey, bookDetails.inspirationImage || undefined);
+      const currentDetails = {
+        title: bookDetails.title || meta?.title || idea,
+        subtitle: bookDetails.subtitle || meta?.subtitle || '',
+        authorName: bookDetails.authorName || meta?.author_name || user?.displayName || 'Author Name',
+        description: bookDetails.description || meta?.description_html || ''
+      };
+      cover = await createCover(idea, customApiKey, bookDetails.inspirationImage || undefined, false, currentDetails);
     } catch (e: any) {
       console.warn("Cover generation failed or forbidden:", e);
+    }
+
+    try {
+      setGeneratingStep('KDP Agent: Crafting compelling Back Cover Blurb...');
+      blurb = await generateBackCover(
+        {
+          title: bookDetails.title || meta?.title || idea,
+          subtitle: bookDetails.subtitle || meta?.subtitle || '',
+          description: bookDetails.description || meta?.description_html || '',
+          language: bookDetails.language
+        },
+        chapters.map(c => c.title),
+        customApiKey
+      );
+    } catch (e: any) {
+      console.warn("Back cover blurb generation failed:", e);
     }
 
     try {
@@ -2484,7 +2858,14 @@ export default function App() {
       console.warn("Audio generation failed or forbidden:", e);
     }
 
-    setAssets({ coverUrl: cover, metadata: meta || undefined, audioUrl: audio });
+    const finalBlurb = blurb ? stripHtmlTags(blurb) : (meta?.description_html ? stripHtmlTags(meta.description_html) : '');
+    setAssets({ 
+      coverUrl: cover, 
+      metadata: meta || undefined, 
+      audioUrl: audio,
+      backCoverContent: finalBlurb 
+    });
+    setShowCoverTextOverlay(true);
     setIsGenerating(false);
     setGeneratingStep('');
   };
@@ -2493,10 +2874,29 @@ export default function App() {
     setIsGenerating(true);
     setGeneratingStep('KDP Agent: Consulting manus AI for a Premium Cover...');
     try {
-      const promptText = (bookDetails.title || "Bestselling Book") + (bookDetails.subtitle ? ": " + bookDetails.subtitle : "");
-      const cover = await createCover(promptText, customApiKey, bookDetails.inspirationImage || undefined, true);
+      const currentDetails = {
+        ...bookDetails,
+        authorName: bookDetails.authorName || user?.displayName || 'Author Name'
+      };
+      const promptText = (currentDetails.title || "Bestselling Book") + (currentDetails.subtitle ? ": " + currentDetails.subtitle : "");
+      const cover = await createCover(promptText, customApiKey, bookDetails.inspirationImage || undefined, true, currentDetails);
+      
+      let blurb = assets.backCoverContent || '';
+      if (!blurb && (bookDetails.title || bookDetails.description)) {
+        try {
+          blurb = await generateBackCover(bookDetails, chapters.map(c => c.title), customApiKey);
+        } catch (e) {
+          console.warn("Auto back cover blurb generation skipped:", e);
+        }
+      }
+
       if (cover) {
-        setAssets(prev => ({ ...prev, coverUrl: cover }));
+        setAssets(prev => ({ 
+          ...prev, 
+          coverUrl: cover,
+          backCoverContent: blurb ? stripHtmlTags(blurb) : prev.backCoverContent
+        }));
+        setShowCoverTextOverlay(true);
         // Log to chat
         setChats(prev => ({ ...prev, ['cover']: [...(prev['cover'] || []), { role: 'model', text: "Behold, a masterpiece generated with manus AI." }] }));
       }
@@ -2520,7 +2920,12 @@ export default function App() {
     setChats(prev => ({ ...prev, ['cover']: [...(prev['cover'] || []), newMessage] }));
 
     try {
-      const newCover = await createCover(instruction, customApiKey, assets.coverUrl || undefined, true);
+      const currentDetails = {
+        ...bookDetails,
+        authorName: bookDetails.authorName || user?.displayName || 'Author Name'
+      };
+      const inspImg = bookDetails.inspirationImage || (assets.coverUrl && assets.coverUrl.startsWith('data:image/') ? assets.coverUrl : undefined);
+      const newCover = await createCover(instruction, customApiKey, inspImg, true, currentDetails);
       if (newCover) {
         setAssets(prev => ({ ...prev, coverUrl: newCover }));
         setChats(prev => ({ ...prev, ['cover']: [...(prev['cover'] || []), { role: 'model', text: "I've refined the artwork based on your feedback. How does this look?" }] }));
@@ -2532,6 +2937,20 @@ export default function App() {
       setIsGenerating(false);
       setGeneratingStep('');
     }
+  };
+
+  const stripHtmlTags = (str?: string): string => {
+    if (!str) return '';
+    return str
+      .replace(/<br\s*\/?>/gi, '\n')
+      .replace(/<\/p>/gi, '\n\n')
+      .replace(/<[^>]*>?/gm, '')
+      .replace(/&nbsp;/g, ' ')
+      .replace(/&amp;/g, '&')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
   };
 
   const handleSaveCover = async () => {
@@ -2661,7 +3080,7 @@ export default function App() {
     const titleText = bookDetails.title || assets.metadata?.title || 'Book Title';
     const subtitleText = bookDetails.subtitle || assets.metadata?.subtitle || '';
     const authorText = bookDetails.authorName || user?.displayName || 'Author Name';
-    const blurbText = assets.backCoverContent || bookDetails.description || 'A compelling narrative crafted with manus AI.';
+    const blurbText = stripHtmlTags(assets.backCoverContent || bookDetails.description) || 'A compelling narrative crafted with manus AI.';
 
     if (mode === 'acx') {
       // ACX Audible Audiobook Cover Standard: 2400 x 2400 px @ 300 DPI (1:1 Square)
@@ -2788,11 +3207,6 @@ export default function App() {
         drawBarcodeOnCanvas(ctx, currentIsbn, 1100, 2200, 550, 320);
       }
 
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
-      ctx.font = 'bold 28px sans-serif';
-      ctx.textAlign = 'left';
-      ctx.fillText("PUBLISHED WITH MANUS AI", 180, 2480);
-
       downloadBase64(canvas.toDataURL('image/png'), `${titleText.toLowerCase().replace(/\s+/g, '_')}_KDP_Back_Cover_300dpi.png`);
     } else {
       // Amazon KDP Paperback Full Cover Spread at 300 DPI
@@ -2853,11 +3267,6 @@ export default function App() {
         const barcodeY = canvasHeight - bleedPx - barcodeHeight - 75;
         drawBarcodeOnCanvas(ctx, currentIsbn, barcodeX, barcodeY, barcodeWidth, barcodeHeight);
       }
-
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
-      ctx.font = 'bold 26px sans-serif';
-      ctx.textAlign = 'left';
-      ctx.fillText("PUBLISHED WITH MANUS AI", backX + 180, canvasHeight - bleedPx - 100);
 
       // 2. Spine Panel
       ctx.fillStyle = spineBgColor || backBgColor || '#18181b';
@@ -3449,6 +3858,51 @@ export default function App() {
   };
 
   const MarkdownComponents = {
+    code({ node, inline, className, children, ...props }: any) {
+      if (inline) {
+        return (
+          <code className="bg-zinc-100 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-200 text-xs px-1.5 py-0.5 rounded border border-zinc-200 dark:border-zinc-700 font-mono" {...props}>
+            {children}
+          </code>
+        );
+      }
+      return (
+        <pre className="bg-slate-900 text-slate-100 p-4 rounded-xl text-xs font-mono overflow-x-auto my-4 border border-slate-800 leading-relaxed shadow-sm whitespace-pre">
+          <code>{children}</code>
+        </pre>
+      );
+    },
+    table({ children }: any) {
+      return (
+        <div className="overflow-x-auto my-6 border border-zinc-200 dark:border-zinc-800 rounded-xl shadow-sm">
+          <table className="min-w-full divide-y divide-zinc-200 dark:divide-zinc-800 text-sm">
+            {children}
+          </table>
+        </div>
+      );
+    },
+    thead({ children }: any) {
+      return <thead className="bg-zinc-100 dark:bg-zinc-800/80 font-semibold text-zinc-900 dark:text-zinc-100">{children}</thead>;
+    },
+    tbody({ children }: any) {
+      return <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800 bg-white dark:bg-zinc-900">{children}</tbody>;
+    },
+    th({ children }: any) {
+      return <th className="px-4 py-2.5 text-left text-xs font-semibold text-zinc-700 dark:text-zinc-300">{children}</th>;
+    },
+    td({ children }: any) {
+      return <td className="px-4 py-2.5 text-xs text-zinc-600 dark:text-zinc-300">{children}</td>;
+    },
+    blockquote({ children }: any) {
+      return (
+        <blockquote className="border-l-4 border-indigo-500 bg-indigo-50/50 dark:bg-indigo-950/30 text-zinc-700 dark:text-zinc-300 px-4 py-3 my-4 rounded-r-xl italic text-sm">
+          {children}
+        </blockquote>
+      );
+    },
+    hr() {
+      return <hr className="my-8 border-zinc-200 dark:border-zinc-800" />;
+    },
     img: ({ node, ...props }: any) => {
       const altId = props.alt || props.src || Math.random().toString();
       
@@ -3840,11 +4294,23 @@ export default function App() {
               {!sidebarCollapsed && <span>Table of Contents</span>}
             </button>
             <button
-              onClick={() => { setViewMode('assets'); setMobileMenuOpen(false); }}
+              onClick={() => { setViewMode('assets'); setAssetsSubTab('cover'); setMobileMenuOpen(false); }}
+              disabled={!projectId}
+              title={sidebarCollapsed ? "Cover Studio" : undefined}
+              className={`w-full flex items-center ${sidebarCollapsed ? 'justify-center px-2 py-2.5' : 'gap-3 px-3 py-2'} rounded-lg text-sm font-medium transition-colors ${
+                viewMode === 'assets' && assetsSubTab === 'cover' ? 'bg-purple-50 text-purple-800 font-bold' : 
+                !projectId ? 'opacity-50 cursor-not-allowed text-zinc-400' : 'text-zinc-700 hover:bg-purple-50/60'
+              }`}
+            >
+              <Palette className="w-4 h-4 text-purple-600 shrink-0" />
+              {!sidebarCollapsed && <span>Cover Studio</span>}
+            </button>
+            <button
+              onClick={() => { setViewMode('assets'); setAssetsSubTab('export'); setMobileMenuOpen(false); }}
               disabled={!projectId}
               title={sidebarCollapsed ? "Publish & Export" : undefined}
               className={`w-full flex items-center ${sidebarCollapsed ? 'justify-center px-2 py-2.5' : 'gap-3 px-3 py-2'} rounded-lg text-sm font-medium transition-colors ${
-                viewMode === 'assets' ? 'bg-emerald-50 text-emerald-800 font-bold' : 
+                viewMode === 'assets' && assetsSubTab === 'export' ? 'bg-emerald-50 text-emerald-800 font-bold' : 
                 !projectId ? 'opacity-50 cursor-not-allowed text-zinc-400' : 'text-zinc-700 hover:bg-emerald-50/60'
               }`}
             >
@@ -4719,8 +5185,25 @@ export default function App() {
                             />
                           </label>
                         )}
-                        <div className="flex-1 text-xs text-zinc-600 bg-indigo-50/50 p-5 rounded-2xl border border-indigo-100 italic leading-relaxed">
-                          "Top quality covers often rely on specific genre conventions. By providing an inspiration image, you help the Art Director agent understand the exact 'vibe' you are targeting."
+                        <div className="flex-1 text-xs text-zinc-600 bg-gradient-to-br from-indigo-50/70 to-amber-50/50 p-5 rounded-2xl border border-indigo-100 space-y-3">
+                          <div className="flex items-center gap-2 text-indigo-900 font-bold">
+                            <Sparkles className="w-4 h-4 text-amber-500" />
+                            Amazon Bestseller Style Benchmarking
+                          </div>
+                          <p className="italic leading-relaxed text-zinc-600">
+                            "Top quality covers rely on specific genre conventions. By uploading an example cover (e.g. Napoleon Hill or James Clear), the Art Director agent extracts color palettes, composition geometry, and visual weight to craft your cover."
+                          </p>
+                          {bookDetails.inspirationImage && (
+                            <button
+                              type="button"
+                              onClick={handleNanoBananaCover}
+                              disabled={isGenerating}
+                              className="px-4 py-2.5 bg-gradient-to-r from-indigo-600 to-amber-600 hover:from-indigo-700 hover:to-amber-700 text-white font-bold text-xs rounded-xl shadow-md transition-all flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                            >
+                              <Sparkles className="w-4 h-4 text-amber-300 animate-pulse" />
+                              {isGenerating ? 'Generating Cover...' : '✨ Generate Cover Inspired By This Image'}
+                            </button>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -5043,7 +5526,17 @@ export default function App() {
                 </div>
 
                 {/* Subtabs for Publish & Export Studio */}
-                <div className="flex items-center gap-2 border-b border-zinc-200 pb-2">
+                <div className="flex items-center gap-2 border-b border-zinc-200 pb-2 flex-wrap">
+                  <button
+                    onClick={() => setAssetsSubTab('cover')}
+                    className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                      assetsSubTab === 'cover'
+                        ? 'bg-purple-600 text-white shadow-md ring-2 ring-purple-200'
+                        : 'bg-white text-zinc-600 hover:bg-zinc-100 border border-zinc-200'
+                    }`}
+                  >
+                    <Palette className="w-4 h-4 text-purple-200" /> Print Cover & Spine Studio
+                  </button>
                   <button
                     onClick={() => setAssetsSubTab('export')}
                     className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
@@ -5054,7 +5547,6 @@ export default function App() {
                   >
                     <Download className="w-4 h-4" /> KDP Bundle & File Export
                   </button>
-
                   <button
                     onClick={() => setAssetsSubTab('price_royalty')}
                     className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
@@ -5066,6 +5558,31 @@ export default function App() {
                     <DollarSign className="w-4 h-4" /> Royalty & Price Calculator
                   </button>
                 </div>
+
+                {assetsSubTab === 'cover' && (
+                  <div className="bg-gradient-to-r from-purple-900 via-indigo-900 to-zinc-900 text-white p-6 rounded-2xl shadow-xl flex flex-col md:flex-row items-start md:items-center justify-between gap-6 mb-6">
+                    <div className="space-y-2">
+                      <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-purple-500/20 border border-purple-400/30 text-purple-300 text-xs font-bold uppercase tracking-wider">
+                        <Palette className="w-3.5 h-3.5" /> Print Cover & Spine Studio
+                      </div>
+                      <h2 className="text-xl md:text-2xl font-extrabold tracking-tight">
+                        Amazon KDP Print Cover & 3D Spine Studio
+                      </h2>
+                      <p className="text-purple-200 text-xs md:text-sm max-w-2xl leading-relaxed">
+                        Design 300 DPI print covers, full paperback wrap spreads with spine width calculations, 3D book mockups, custom SVG frames, overlay text positioning, and AI cover art generation.
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button
+                        onClick={() => setAssetsSubTab('export')}
+                        className="bg-white/10 hover:bg-white/20 text-white font-bold px-4 py-2.5 rounded-xl text-xs transition-all border border-white/20 flex items-center gap-2 cursor-pointer"
+                      >
+                        <Download className="w-4 h-4 text-emerald-400" />
+                        <span>Go to File Export Bundle</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
 
                 {assetsSubTab === 'price_royalty' && (
                   <PriceRoyaltyCalculator
@@ -5093,9 +5610,10 @@ export default function App() {
                   </div>
                 )}
 
-                {assetsSubTab === 'export' && (
+                {(assetsSubTab === 'export' || assetsSubTab === 'cover') && (
 
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                <div className={assetsSubTab === 'cover' ? "space-y-8 max-w-5xl mx-auto" : "grid grid-cols-1 lg:grid-cols-3 gap-8"}>
+                  {assetsSubTab === 'export' && (
                   <div className="lg:col-span-2 space-y-8">
                     {/* Step 1: KDP Book Details & Copy Controls */}
                     <div className="bg-white rounded-2xl border border-zinc-200 shadow-sm overflow-hidden">
@@ -5402,6 +5920,7 @@ export default function App() {
                       </div>
                     </div>
                   </div>
+                  )}
 
                   <div className="space-y-8">
                      {/* Cover Section with Back Cover, Spine, 3D Preview, and PNG Export */}
@@ -5492,7 +6011,7 @@ export default function App() {
                                           {/* Blurb */}
                                           <div className="my-auto py-2">
                                             <p className="text-[9px] sm:text-[10px] text-zinc-200 leading-relaxed line-clamp-8 sm:line-clamp-10 font-sans text-justify">
-                                              {assets.backCoverContent || bookDetails.description || 'A compelling book crafted with manus AI.'}
+                                              {stripHtmlTags(assets.backCoverContent || bookDetails.description) || 'A compelling book crafted with manus AI.'}
                                             </p>
                                           </div>
 
@@ -5938,8 +6457,77 @@ export default function App() {
                                  manus AI Pro Art Editor
                                </h4>
                                <p className="text-[10px] text-zinc-500 text-center mb-4 leading-relaxed px-4">
-                                 Describe changes to the cover or let manus AI design a modern bestseller cover for your manuscript.
+                                 Describe changes to the cover or let manus AI benchmark Amazon bestsellers for your manuscript.
                                </p>
+
+                               {/* Cover Style Reference / Example Upload Box */}
+                               <div className="bg-gradient-to-br from-indigo-50/80 via-zinc-50 to-amber-50/50 border border-indigo-100 rounded-xl p-3.5 mb-4 space-y-3 text-left shadow-2xs">
+                                 <div className="flex items-center justify-between">
+                                   <label className="text-[11px] font-bold text-zinc-800 flex items-center gap-1.5">
+                                     <ImageIcon className="w-3.5 h-3.5 text-indigo-600" />
+                                     Style Reference / Bestseller Example
+                                   </label>
+                                   {bookDetails.inspirationImage && (
+                                     <span className="text-[9px] font-bold text-emerald-700 bg-emerald-100/80 border border-emerald-300 px-2 py-0.5 rounded-full flex items-center gap-1 shadow-2xs">
+                                       <Check className="w-2.5 h-2.5 text-emerald-600" /> Style Active
+                                     </span>
+                                   )}
+                                 </div>
+                                 <p className="text-[10px] text-zinc-500 leading-tight">
+                                   Upload an Amazon bestseller cover (e.g. Napoleon Hill, James Clear) to guide AI style, color palette, and visual composition.
+                                 </p>
+                                 {bookDetails.inspirationImage ? (
+                                   <div className="space-y-2.5">
+                                     <div className="flex items-center gap-3 p-2.5 bg-white rounded-xl border border-indigo-100 shadow-xs">
+                                       <img src={bookDetails.inspirationImage} alt="Reference" className="w-12 h-16 object-cover rounded-md border border-zinc-200 shadow-xs shrink-0" />
+                                       <div className="flex-1 text-[10px]">
+                                         <span className="font-bold text-zinc-800 block">Style Reference Saved</span>
+                                         <span className="text-indigo-600 text-[9px] font-medium leading-tight block mt-0.5">
+                                           AI will benchmark & emulate this cover's aesthetic.
+                                         </span>
+                                       </div>
+                                       <button
+                                         type="button"
+                                         onClick={() => setBookDetails(prev => ({ ...prev, inspirationImage: null }))}
+                                         className="p-1.5 text-zinc-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
+                                         title="Remove reference image"
+                                       >
+                                         <X className="w-4 h-4" />
+                                       </button>
+                                     </div>
+
+                                     {/* Prominent Action Button: Generate Cover Using This Inspiration */}
+                                     <button
+                                       type="button"
+                                       onClick={handleNanoBananaCover}
+                                       disabled={isGenerating}
+                                       className="w-full py-2.5 px-3 bg-gradient-to-r from-indigo-600 via-indigo-700 to-amber-600 hover:from-indigo-700 hover:to-amber-700 text-white font-bold text-xs rounded-xl shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                                     >
+                                       <Sparkles className="w-4 h-4 text-amber-300 animate-pulse shrink-0" />
+                                       {isGenerating ? 'Generating Cover...' : '✨ Generate Cover Inspired By This Style'}
+                                     </button>
+                                   </div>
+                                 ) : (
+                                   <label className="cursor-pointer bg-white border border-dashed border-indigo-200 hover:border-indigo-400 hover:bg-indigo-50/40 transition-all rounded-xl p-3 text-center flex items-center justify-center gap-2 group block shadow-2xs">
+                                     <UploadCloud className="w-4 h-4 text-indigo-400 group-hover:text-indigo-600 shrink-0" />
+                                     <span className="text-[10px] font-bold text-zinc-700 group-hover:text-indigo-700">Upload Amazon Bestseller Example</span>
+                                     <input 
+                                       type="file" 
+                                       accept="image/*" 
+                                       className="hidden" 
+                                       onChange={(e) => {
+                                         const file = e.target.files?.[0];
+                                         if (!file) return;
+                                         const reader = new FileReader();
+                                         reader.onload = (ev) => {
+                                           setBookDetails(prev => ({ ...prev, inspirationImage: ev.target?.result as string }));
+                                         };
+                                         reader.readAsDataURL(file);
+                                       }}
+                                     />
+                                   </label>
+                                 )}
+                               </div>
                                <div className="space-y-3 mb-6">
                                  {assets.coverUrl ? (
                                    <div className="bg-zinc-50 border border-zinc-200 rounded-xl p-3 shadow-inner">
@@ -5999,6 +6587,62 @@ export default function App() {
                                         />
                                       </label>
                                     </div>
+                                 )}
+                               </div>
+
+                               {/* Custom Uploaded Cover Design Templates & Overlays */}
+                               <div className="bg-white border border-zinc-200 rounded-xl p-3.5 space-y-2.5 shadow-2xs text-left mb-4">
+                                 <div className="flex items-center justify-between">
+                                   <label className="text-[11px] font-bold text-zinc-800 flex items-center gap-1.5">
+                                     <Layers className="w-3.5 h-3.5 text-indigo-600" />
+                                     Custom Cover Templates & Overlays
+                                   </label>
+                                   <label className="cursor-pointer text-[10px] font-bold text-indigo-600 hover:text-indigo-800 bg-indigo-50 hover:bg-indigo-100 px-2.5 py-1 rounded-lg border border-indigo-200 transition-colors flex items-center gap-1">
+                                     <Plus className="w-3 h-3" /> Upload SVG/Image
+                                     <input 
+                                       type="file" 
+                                       accept="image/*,.svg" 
+                                       onChange={handleUploadCoverTemplate} 
+                                       className="hidden" 
+                                     />
+                                   </label>
+                                 </div>
+                                 <p className="text-[10px] text-zinc-500 leading-normal">
+                                   Upload custom SVG or image cover templates/frames. Selecting a template overlays title and author text automatically.
+                                 </p>
+
+                                 {uploadedCoverTemplates.length > 0 ? (
+                                   <div className="grid grid-cols-3 gap-2 pt-1">
+                                     {uploadedCoverTemplates.map((tpl) => (
+                                       <div 
+                                         key={tpl.id}
+                                         onClick={() => {
+                                           setAssets(prev => ({ ...prev, coverUrl: tpl.url }));
+                                           setShowCoverTextOverlay(true);
+                                         }}
+                                         className={`group relative rounded-lg border-2 overflow-hidden aspect-[3/4] cursor-pointer transition-all ${
+                                           assets.coverUrl === tpl.url ? 'border-indigo-600 ring-2 ring-indigo-200 shadow-sm' : 'border-zinc-200 hover:border-zinc-400'
+                                         }`}
+                                       >
+                                         <img src={tpl.url} alt={tpl.name} className="w-full h-full object-cover" />
+                                         <button
+                                           type="button"
+                                           onClick={(e) => handleDeleteUploadedTemplate(tpl.id, e)}
+                                           className="absolute top-1 right-1 p-1 bg-black/70 hover:bg-red-600 text-white rounded-md opacity-0 group-hover:opacity-100 transition-opacity"
+                                           title="Delete template"
+                                         >
+                                           <X className="w-3 h-3" />
+                                         </button>
+                                         <div className="absolute bottom-0 inset-x-0 bg-black/60 backdrop-blur-xs p-1 text-[8px] font-semibold text-white truncate text-center">
+                                           {tpl.name}
+                                         </div>
+                                       </div>
+                                     ))}
+                                   </div>
+                                 ) : (
+                                   <div className="text-center py-2.5 px-2 border border-dashed border-zinc-200 rounded-lg bg-zinc-50/50">
+                                     <p className="text-[10px] text-zinc-400">No custom templates uploaded yet. Click above to add your SVG frame.</p>
+                                   </div>
                                  )}
                                </div>
 
@@ -6467,49 +7111,94 @@ export default function App() {
                   {/* TAB 4: Interactive Book Landing Page */}
                   {marketingSubTab === 'landing_page' && (
                     <div className="space-y-6">
-                      <div className="bg-white p-6 rounded-2xl border border-zinc-200 shadow-xs flex flex-col md:flex-row items-center justify-between gap-4">
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <h3 className="font-bold text-zinc-900 text-base flex items-center gap-2">
-                              <Globe className="w-5 h-5 text-purple-600" /> Promotional Book Landing Page Generator
-                            </h3>
-                            {publishedLandingData && (
-                              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200 animate-pulse">
-                                <span className="w-2 h-2 rounded-full bg-emerald-500"></span> Live & Published
-                              </span>
-                            )}
+                      <div className="bg-white p-6 rounded-2xl border border-zinc-200 shadow-xs flex flex-col gap-5">
+                        <div className="flex flex-col md:flex-row items-center justify-between gap-4">
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <h3 className="font-bold text-zinc-900 text-base flex items-center gap-2">
+                                <Globe className="w-5 h-5 text-purple-600" /> Promotional Book Landing Page Generator
+                              </h3>
+                              {publishedLandingData && (
+                                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200 animate-pulse">
+                                  <span className="w-2 h-2 rounded-full bg-emerald-500"></span> Live & Published
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-xs text-zinc-500 mt-1">
+                              Choose a design template, auto-generate sales copy, and instantly publish or export your standalone .html landing page.
+                            </p>
                           </div>
-                          <p className="text-xs text-zinc-500 mt-1">
-                            Instantly publish your responsive book landing page to Google Cloud/Web or download standalone HTML for custom hosting.
-                          </p>
+
+                          <div className="flex flex-wrap items-center gap-2.5 shrink-0">
+                            <button
+                              onClick={handleGenerateLandingCopy}
+                              disabled={isGeneratingLanding}
+                              className="bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white font-bold px-3.5 py-2.5 rounded-xl text-xs transition-all shadow-md flex items-center gap-1.5 cursor-pointer"
+                            >
+                              {isGeneratingLanding ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+                              <span>Auto-Generate Copy</span>
+                            </button>
+
+                            <button
+                              onClick={handlePublishLandingPage}
+                              disabled={isPublishingLanding}
+                              className="bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white font-bold px-4 py-2.5 rounded-xl text-xs transition-all shadow-md flex items-center gap-1.5 cursor-pointer ring-2 ring-indigo-300/50"
+                              title="1-Click Instant Web Publishing"
+                            >
+                              {isPublishingLanding ? <Loader2 className="w-4 h-4 animate-spin" /> : <Globe className="w-4 h-4 text-purple-200" />}
+                              <span>{publishedLandingData ? 'Manage Live Publishing' : '⚡ Instant Publish to Web'}</span>
+                            </button>
+
+                            <button
+                              onClick={() => exportLandingPageHtml(bookDetails, landingCopyData, assets.coverUrl, selectedLandingTemplate)}
+                              className="bg-zinc-800 hover:bg-zinc-900 text-white font-bold px-3.5 py-2.5 rounded-xl text-xs transition-all shadow-md flex items-center gap-1.5 cursor-pointer"
+                            >
+                              <Download className="w-4 h-4 text-emerald-400" /> Export .html
+                            </button>
+                          </div>
                         </div>
 
-                        <div className="flex flex-wrap items-center gap-2.5 shrink-0">
-                          <button
-                            onClick={handleGenerateLandingCopy}
-                            disabled={isGeneratingLanding}
-                            className="bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white font-bold px-3.5 py-2.5 rounded-xl text-xs transition-all shadow-md flex items-center gap-1.5 cursor-pointer"
-                          >
-                            {isGeneratingLanding ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
-                            <span>Auto-Generate Copy</span>
-                          </button>
-
-                          <button
-                            onClick={handlePublishLandingPage}
-                            disabled={isPublishingLanding}
-                            className="bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white font-bold px-4 py-2.5 rounded-xl text-xs transition-all shadow-md flex items-center gap-1.5 cursor-pointer ring-2 ring-indigo-300/50"
-                            title="1-Click Instant Web Publishing like Google AI Studio"
-                          >
-                            {isPublishingLanding ? <Loader2 className="w-4 h-4 animate-spin" /> : <Globe className="w-4 h-4 text-purple-200" />}
-                            <span>{publishedLandingData ? 'Manage Live Publishing' : '⚡ Instant Publish to Web'}</span>
-                          </button>
-
-                          <button
-                            onClick={() => exportLandingPageHtml(bookDetails, landingCopyData, assets.coverUrl)}
-                            className="bg-zinc-800 hover:bg-zinc-900 text-white font-bold px-3.5 py-2.5 rounded-xl text-xs transition-all shadow-md flex items-center gap-1.5 cursor-pointer"
-                          >
-                            <Download className="w-4 h-4 text-emerald-400" /> Export .html
-                          </button>
+                        {/* Landing Page Design Template Selector */}
+                        <div className="pt-4 border-t border-zinc-100 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                          <span className="text-xs font-bold text-zinc-700 flex items-center gap-1.5">
+                            <Layers className="w-4 h-4 text-indigo-600" />
+                            Select Landing Page Template Layout:
+                          </span>
+                          <div className="grid grid-cols-3 gap-2 w-full sm:w-auto">
+                            <button
+                              type="button"
+                              onClick={() => setSelectedLandingTemplate('classic')}
+                              className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 border ${
+                                selectedLandingTemplate === 'classic'
+                                  ? 'bg-purple-600 text-white border-purple-600 shadow-md ring-2 ring-purple-200'
+                                  : 'bg-zinc-50 hover:bg-zinc-100 text-zinc-700 border-zinc-200'
+                              }`}
+                            >
+                              <span>🌟</span> Classic Bestseller
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setSelectedLandingTemplate('modern')}
+                              className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 border ${
+                                selectedLandingTemplate === 'modern'
+                                  ? 'bg-purple-600 text-white border-purple-600 shadow-md ring-2 ring-purple-200'
+                                  : 'bg-zinc-50 hover:bg-zinc-100 text-zinc-700 border-zinc-200'
+                              }`}
+                            >
+                              <span>⚡</span> Modern Tech
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setSelectedLandingTemplate('editorial')}
+                              className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 border ${
+                                selectedLandingTemplate === 'editorial'
+                                  ? 'bg-purple-600 text-white border-purple-600 shadow-md ring-2 ring-purple-200'
+                                  : 'bg-zinc-50 hover:bg-zinc-100 text-zinc-700 border-zinc-200'
+                              }`}
+                            >
+                              <span>📜</span> Editorial & Author
+                            </button>
+                          </div>
                         </div>
                       </div>
 
@@ -6522,81 +7211,17 @@ export default function App() {
                             <span className="w-3 h-3 rounded-full bg-green-500/80 inline-block"></span>
                             <span className="text-zinc-500 font-mono ml-2">https://${(bookDetails.title || 'book').toLowerCase().replace(/[^a-z0-9]/g, '')}.com</span>
                           </div>
-                          <span className="text-[10px] bg-zinc-800 px-2.5 py-1 rounded-full text-purple-300 font-semibold">Live Interactive Preview</span>
+                          <span className="text-[10px] bg-zinc-800 px-2.5 py-1 rounded-full text-purple-300 font-semibold uppercase tracking-wider">
+                            {selectedLandingTemplate} Template Live Preview
+                          </span>
                         </div>
 
-                        <div className="bg-zinc-50 text-zinc-900 rounded-b-xl overflow-hidden mt-3 max-h-[650px] overflow-y-auto custom-scrollbar">
-                          {/* Live Preview Content */}
-                          <div className="p-6 md:p-12 max-w-4xl mx-auto space-y-12">
-                            
-                            {/* Hero */}
-                            <div className="grid grid-cols-1 md:grid-cols-12 gap-8 items-center border-b border-zinc-200 pb-12">
-                              <div className="md:col-span-7 space-y-4">
-                                <span className="inline-block px-3 py-1 rounded-full bg-purple-100 text-purple-700 text-xs font-bold uppercase tracking-wider">
-                                  Official Book Launch
-                                </span>
-                                <h1 className="text-3xl md:text-4xl font-extrabold text-zinc-900 leading-tight font-serif">
-                                  {landingCopyData?.heroHeadline || bookDetails.title || 'Transformative New Release'}
-                                </h1>
-                                <p className="text-zinc-600 text-sm md:text-base leading-relaxed">
-                                  {landingCopyData?.heroSubheadline || bookDetails.subtitle || bookDetails.description || 'Discover key insights and practical strategies in this groundbreaking book.'}
-                                </p>
-                                <div className="pt-2 flex flex-wrap gap-3">
-                                  <a href="#buy" onClick={(e) => { e.preventDefault(); alert('In your exported HTML file, this button redirects readers to your Amazon/Barnes & Noble buy page!'); }} className="bg-purple-600 hover:bg-purple-700 text-white font-bold px-6 py-3 rounded-xl text-xs shadow-md">
-                                    {landingCopyData?.heroCtaText || 'Buy Now on Amazon'}
-                                  </a>
-                                  <button onClick={() => alert("Free sample preview active!")} className="bg-white border border-zinc-300 text-zinc-800 font-semibold px-5 py-3 rounded-xl text-xs hover:bg-zinc-100">
-                                    Read Sample Chapter
-                                  </button>
-                                </div>
-                              </div>
-
-                              <div className="md:col-span-5 flex justify-center">
-                                {assets.coverUrl ? (
-                                  <img src={assets.coverUrl} alt="Cover" className="w-48 md:w-56 rounded-xl shadow-2xl border border-zinc-200 object-cover" />
-                                ) : (
-                                  <div className="w-48 h-64 bg-zinc-200 rounded-xl border border-zinc-300 flex items-center justify-center text-zinc-400 text-xs font-bold">
-                                    Book Cover Image
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-
-                            {/* Takeaways */}
-                            <div className="space-y-4">
-                              <h2 className="text-xl font-bold text-zinc-900 font-serif text-center">What You Will Discover</h2>
-                              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
-                                {(landingCopyData?.keyTakeaways || [
-                                  "Actionable strategies to accelerate personal and professional growth",
-                                  "Real-world frameworks tested across thousands of readers",
-                                  "Proven methods to overcome obstacles and master key skills",
-                                  "Step-by-step guidance designed for practical application"
-                                ]).map((item: string, idx: number) => (
-                                  <div key={idx} className="bg-white p-3 rounded-xl border border-zinc-200 flex items-start gap-2.5">
-                                    <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />
-                                    <span className="text-zinc-700">{item}</span>
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-
-                            {/* Testimonials */}
-                            <div className="space-y-4">
-                              <h2 className="text-xl font-bold text-zinc-900 font-serif text-center">Early Praise</h2>
-                              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                {(landingCopyData?.testimonials || [
-                                  { quote: "An absolute game-changer. I could not put it down!", name: "Elena Rostova", title: "Literary Reviewer" },
-                                  { quote: "Required reading for anyone serious about mastering this subject.", name: "David Chen", title: "Bestselling Author" }
-                                ]).map((t: any, idx: number) => (
-                                  <div key={idx} className="bg-white p-4 rounded-xl border border-zinc-200 text-xs space-y-2">
-                                    <p className="text-zinc-600 italic">"{t.quote}"</p>
-                                    <div className="font-bold text-zinc-800">{t.name} <span className="text-purple-600 font-normal">({t.title})</span></div>
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-
-                          </div>
+                        <div className="bg-white text-zinc-900 rounded-b-xl overflow-hidden mt-3 shadow-inner">
+                          <iframe
+                            srcDoc={getLandingPageHtmlString(bookDetails, landingCopyData, assets.coverUrl, selectedLandingTemplate)}
+                            className="w-full h-[680px] border-0 rounded-b-xl"
+                            title="Landing Page Preview"
+                          />
                         </div>
                       </div>
                     </div>
@@ -7641,7 +8266,7 @@ export default function App() {
               {/* Download or Unpublish */}
               <div className="pt-4 border-t border-zinc-100 flex items-center justify-between text-xs">
                 <button
-                  onClick={() => exportLandingPageHtml(bookDetails, landingCopyData, assets.coverUrl)}
+                  onClick={() => exportLandingPageHtml(bookDetails, landingCopyData, assets.coverUrl, selectedLandingTemplate)}
                   className="text-zinc-600 hover:text-zinc-900 font-semibold flex items-center gap-1 hover:underline cursor-pointer"
                 >
                   <Download className="w-3.5 h-3.5 text-emerald-600" />

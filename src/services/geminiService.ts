@@ -344,7 +344,11 @@ export async function generateOutline(idea: string, keywords: string[], apiKey?:
       - **Key Themes & Sub-topics**: 4-6 detailed bullet points outlining structural progression.
       - **Narrative Arc / Real-World Case Study**: A compelling narrative scenario, character beat, or empirical case study.
       - **Actionable Takeaways / Climax**: Concrete insights, cliffhangers, or practical exercises.
-      - **Target Word Allocation & Pacing**: Recommended target word count (e.g. 2,000-2,500 words) and narrative tempo.`,
+      - **Target Word Allocation & Pacing**: Recommended target word count (e.g. 2,000-2,500 words) and narrative tempo.
+      
+      MANDATORY CHARACTER NAMING & DIVERSITY RULES:
+      - Every character, narrative subject, or case study figure introduced MUST have a distinct first name AND a distinct surname (no repeating first or last names across characters in the manuscript).
+      - NEVER use generic AI overused default names (e.g. "Alex", "Sarah", "Elena", "Marcus Vance", "Dr. Jenkins", "David", "Maya", "Ethan", "Chloe", "Carter"). Generate fresh, distinctive, authentic names tailored to this project's setting.`,
       config: {
         thinkingConfig: { thinkingBudget: 2048 },
         systemInstruction: systemPrompt || "You are a master Literary Architect, NYT Bestselling Editor, and Publishing Specialist. Synthesize deep structural outlines with rich narrative momentum, tropes, psychological depth, and reader engagement loops."
@@ -395,6 +399,35 @@ export interface ContinuityContext {
   precedingChapterSummaries?: string[];
   previousChapterEnding?: string;
   learnedRules?: LearnedRule[];
+  existingCharacterNames?: string[];
+}
+
+export function extractExistingCharacterNames(text: string): string[] {
+  if (!text) return [];
+  const clean = text.replace(/```[\s\S]*?```/g, '').replace(/<[^>]*>/g, '');
+  const regex = /\b(?:Dr\.|Mr\.|Mrs\.|Ms\.|Professor\s+)?([A-Z][a-z]{1,15}\s+[A-Z][a-z]{1,20})\b/g;
+  const matches = clean.match(regex);
+  if (!matches) return [];
+
+  const set = new Set<string>();
+  const ignoreList = new Set([
+    'Chapter One', 'Chapter Two', 'Chapter Three', 'Chapter Four', 'Chapter Five',
+    'Chapter Six', 'Chapter Seven', 'Chapter Eight', 'Chapter Nine', 'Chapter Ten',
+    'Chapter Eleven', 'Chapter Twelve', 'Table Of', 'Contents Outline', 'Part One',
+    'Part Two', 'Part Three', 'Part Four', 'United States', 'New York', 'San Francisco',
+    'Los Angeles', 'North America', 'South America', 'Great Britain', 'Western Europe',
+    'Anti AI', 'Project Setup', 'Book Details', 'Publish Export', 'Amazon Research',
+    'Audiobook Studio', 'Marketing PR', 'Humanizer Studio', 'Case Study', 'Key Takeaways'
+  ]);
+
+  for (const match of matches) {
+    const trimmed = match.trim();
+    if (!ignoreList.has(trimmed) && !trimmed.toLowerCase().includes('chapter')) {
+      set.add(trimmed);
+    }
+  }
+
+  return Array.from(set).slice(0, 30);
 }
 
 export async function summarizeChapterForContinuity(
@@ -524,6 +557,16 @@ export async function generateChapter(
     previousEndingBlock = `\n\nIMMEDIATELY PRECEDING CHAPTER CONCLUSION (BRIDGE SEAMLESSLY):\nHere are the final paragraphs of the preceding chapter. Open this new chapter with smooth narrative bridge and momentum:\n"""\n${continuityContext.previousChapterEnding}\n"""\n`;
   }
 
+  // Format existing character names block
+  let existingCharactersBlock = '';
+  if (continuityContext?.existingCharacterNames && continuityContext.existingCharacterNames.length > 0) {
+    existingCharactersBlock = `\n\nESTABLISHED PROJECT CHARACTERS (MANDATORY NAME CONTINUITY & UNIQUNESS):\nThe following character names already exist in this manuscript project:\n` +
+      continuityContext.existingCharacterNames.map(n => `- ${n}`).join('\n') +
+      `\nCRITICAL CHARACTER NAMING LAWS:
+1. Re-use these exact names ONLY when referring to these same established characters.
+2. For ANY newly introduced character in this chapter, you MUST assign a completely NEW first name AND a completely NEW surname. No new character should share a first name or a surname with any existing character!\n`;
+  }
+
   const generate = async (modelName: string) => {
     if (signal?.aborted) {
       throw new Error('Generation cancelled by user');
@@ -539,6 +582,7 @@ export async function generateChapter(
       ${outline}
       ${precedingSummariesBlock}
       ${previousEndingBlock}
+      ${existingCharactersBlock}
       ${learnedRulesBlock}
       
       TASK: Write the complete, deeply detailed, comprehensive content for the chapter titled: "${chapterTitle}".
@@ -553,7 +597,12 @@ export async function generateChapter(
       7. AUTHENTIC HUMAN PROSE & DE-AI MANDATE:
          - ZERO AI BUZZWORDS OR FORMULAIC CRUTCHES: Strictly forbidden words include "delve", "paradigm shift", "seamlessly", "holistic", "ever-evolving", "landscape", "fostering", "synergy", "testament to", "tapestry", "beacon", "vital role", "pivotal", "underscore", "in conclusion", "in today's fast-paced world", "intricate web", "transformative journey".
          - MASTERFUL BURSTINESS & CADENCE: Alternate sentence lengths dynamically. Mix ultra-short 3-5 word declarations with expansive, multi-clause descriptive observations.
-         - RICH SENSORY DETAIL & ACTIVE VERBS: Write with visceral clarity, emotional resonance, grounded metaphors, and natural conversational authority.`,
+         - RICH SENSORY DETAIL & ACTIVE VERBS: Write with visceral clarity, emotional resonance, grounded metaphors, and natural conversational authority.
+      8. MANDATORY CHARACTER NAMING UNIQUNESS & DIVERSITY (NO DUPLICATE FIRST OR SURNAMES):
+         - UNIQUE NAMES PER MANUSCRIPT: Every character in this manuscript MUST have a distinct first name AND a distinct surname so readers do not confuse different characters.
+         - NO SHARED FIRST NAMES OR SURNAMES: Do NOT give different characters the same first name or the same surname unless they are explicitly established in the narrative as immediate family members (e.g. siblings or parent/child sharing a family surname).
+         - NO OVERUSED AI CLICHÉ NAMES: NEVER default to overused generic AI character names (e.g. "Alex", "Sarah", "Elena", "Marcus Vance", "Dr. Jenkins", "David", "Maya", "Ethan", "Chloe", "Carter", "Lucas", "Olivia"). Generate fresh, distinctive, authentic names tailored to the book's setting.
+         - PROJECT CONTINUITY: Keep established character names consistent across all chapters in this project, and never give newly introduced characters the names of existing characters in the project.`,
       config: {
         thinkingConfig: { thinkingBudget: 2048 },
         systemInstruction: (systemPrompt ? `${systemPrompt}\n\n` : '') + "You are a Pulitzer-worthy author and master ghostwriter. Synthesize authoritative depth, emotional intelligence, visceral narrative texture, and flawless human rhythm while rigorously adhering to all learned user corrections and manuscript continuity."
@@ -761,7 +810,20 @@ CRITICAL MANDATORY RULES FOR ALL EDITS:
    - Set chapterId to the chapter index (e.g., "1", "2") or its ID/Title.
 5. WRITE ALL REVISED TEXT IN: ${language}.
 6. Always provide complete, publication-ready Markdown text for all chapter revisions.
-7. In your conversational text response, summarize specifically what changes you made.`;
+7. In your conversational text response, summarize specifically what changes you made.
+8. MANDATORY CHARACTER NAMING UNIQUNESS & DIVERSITY RULES:
+   - Every character in this project MUST have a unique first name AND a unique surname so readers do not confuse different people (no two distinct characters sharing a first or last name unless explicitly established as immediate family).
+   - NEVER reuse generic overused AI cliché names (e.g., "Alex", "Sarah", "Elena", "Marcus Vance", "Dr. Jenkins", "David", "Maya", "Ethan", "Chloe", "Carter", "Lucas", "Olivia").
+   - Maintain strict character name consistency across all chapters in this manuscript project, and do NOT give new characters the names of existing characters.
+9. MANDATORY CROSS-CHAPTER MANUSCRIPT COHESION & CONTINUITY:
+   - When rewriting, editing, or polishing any chapter, maintain total narrative, thematic, chronological, and stylistic cohesion with the surrounding chapters and full book outline.
+   - Do NOT introduce plot contradictions, retcon established facts, repeat introductory explanations already covered in earlier chapters, or disrupt the narrative flow and character arcs established across the book.
+   - Maintain consistent character motivations, tone, vocabulary level, and narrative rhythm throughout the rewrite.
+10. MANDATORY NON-LETTER / DIAGRAM / TABLE FORMATTING RULES:
+   - Whenever including non-letter content such as ASCII diagrams, flowcharts, schemas, or architectural figures, ALWAYS enclose them inside explicit Markdown code blocks (\`\`\`text ... \`\`\`) with monospace alignment.
+   - Format data grids, metrics, and matrices as clean Markdown tables (| Col 1 | Col 2 |).
+   - Enclose quotes, key insights, and mandates in Markdown blockquotes (> ...).
+   - Never output raw unformatted ASCII art or malformed/empty image tags.`;
 
   const artDirectorInstruction = `You are an elite Art Director and Visual Concept Designer.
 The user is working on a ${documentType}.
@@ -885,30 +947,52 @@ ALWAYS USE THIS EXACT MARKDOWN FORMAT: ![Detailed prompt describing the visual](
   return { replyText, revisedContent, updatedOutline, updatedChapters };
 }
 
-export async function artDirectorAgent(baseRequest: string, type: 'cover' | 'inline', apiKey?: string, inspirationImage?: string): Promise<string> {
+export async function artDirectorAgent(
+  baseRequest: string, 
+  type: 'cover' | 'inline', 
+  apiKey?: string, 
+  inspirationImage?: string,
+  bookDetails?: { title?: string; subtitle?: string; authorName?: string; genre?: string; description?: string }
+): Promise<string> {
   const ai = getAI(apiKey);
+  const title = bookDetails?.title || '';
+  const authorName = bookDetails?.authorName || '';
+  const subtitle = bookDetails?.subtitle || '';
+  const genre = bookDetails?.genre || '';
+  const description = bookDetails?.description || '';
+
+  const coverInfo = `Book Title: "${title || 'Untitled'}"${subtitle ? `, Subtitle: "${subtitle}"` : ''}${authorName ? `, Author Name: "${authorName}"` : ''}${genre ? `, Genre/Category: "${genre}"` : ''}. `;
+
   const directive = type === 'cover' 
-    ? "Create a masterful, high-end book cover image prompt. Focus on striking imagery, powerful composition, lighting, and mood. Specify 'leave negative space for title text' instead of embedding the title itself. Style: Bestselling modern publication."
+    ? `You are a World-Class Amazon KDP Bestseller Art Director.
+Analyze the book details (${coverInfo} Summary: "${description.substring(0, 400)}").
+Your job is to benchmark top-selling Amazon bestsellers in this book's genre to identify winning visual patterns:
+- High-contrast focal point imagery
+- Cinematic lighting & rich atmospheric color palette
+- Clean framing that reserves generous negative space at the top and bottom specifically for large title and author typography overlays.
+CRITICAL: DO NOT copy or clone any specific existing book cover, copyrighted layout, coins, or author text. Create an original artwork prompt with NO TEXT in the background image.`
     : "Create an expert editorial illustration or highly polished photo prompt for an inline book image based on the user's description. Maintain a clean, professional, and directly relevant aesthetic.";
     
-  const userParts: any[] = [`I need an expert AI image generation prompt for the following concept: "${baseRequest}"\n\nOutput ONLY the final highly-detailed image prompt. Do not include any other conversational text or quotes.`];
+  const userParts: any[] = [`Perform Amazon Bestseller Cover Style Benchmarking and create an expert AI image generation prompt for this concept: "${baseRequest}"\n${coverInfo}\nOutput ONLY the final highly-detailed image prompt. Do not include conversational text or markdown code blocks.`];
   
   if (inspirationImage) {
-    const data = inspirationImage.split(',')[1];
-    userParts.push({
-      inlineData: {
-        mimeType: "image/jpeg",
-        data: data
-      }
-    });
-    userParts[0] += "\n\nI have provided an inspiration image. Please analyze its style, composition, lighting, and layout principles, and incorporate those specific visual characteristics into your engineered prompt to ensure the new cover captures the same professional aesthetic.";
+    const data = inspirationImage.split(',')[1] || inspirationImage;
+    if (data.length > 50) {
+      userParts.push({
+        inlineData: {
+          mimeType: "image/jpeg",
+          data: data
+        }
+      });
+      userParts[0] += "\n\nCRITICAL USER STYLE REFERENCE IMAGE ATTACHED: Carefully analyze the attached example cover image ONLY for color scheme, lighting, and visual tone. DO NOT copy or clone any text, words, author names, logos, or specific copyrighted cover template frames from the reference image. Formulate a prompt for a completely original, text-free background artwork suited for this manuscript.";
+    }
   }
 
   const response = await withRetry(() => ai.models.generateContent({
     model: "gemini-3.6-flash",
     contents: [{ role: 'user', parts: userParts.map(p => typeof p === 'string' ? { text: p } : p) }],
     config: {
-      systemInstruction: `You are an elite Art Director and Master Prompt Engineer for AI Image models. ${directive} Use descriptive keywords for lighting, camera angles, color palettes, and artistic style.`
+      systemInstruction: directive
     }
   }), !!apiKey);
   
@@ -948,139 +1032,226 @@ export async function generateInlineImage(prompt: string, apiKey?: string) {
   return null;
 }
 
-export function generateProceduralCoverSvg(prompt: string): string {
-  const cleanPrompt = (prompt || 'Bestselling Masterpiece').replace(/[<>&'"]/g, '');
-  const titleWords = cleanPrompt.split(' ').slice(0, 6).join(' ').toUpperCase();
-  
+export function generateProceduralCoverSvg(
+  prompt: string,
+  bookDetails?: { title?: string; subtitle?: string; authorName?: string; genre?: string; description?: string },
+  inspirationImage?: string
+): string {
+  const cleanTitle = (bookDetails?.title || prompt || 'Bestselling Masterpiece').replace(/[<>&'"]/g, '').trim();
+  const cleanAuthor = (bookDetails?.authorName || 'Author Name').replace(/[<>&'"]/g, '').trim();
+  const cleanSubtitle = (bookDetails?.subtitle || 'An Authoritative Guide for Achieving Excellence').replace(/[<>&'"]/g, '').trim();
+  const genre = (bookDetails?.genre || '').toLowerCase();
+
+  // Compute a seed from title and author to vary color schemes & visual themes dynamically
+  let hash = 0;
+  const str = cleanTitle + cleanAuthor + (bookDetails?.genre || '');
+  for (let i = 0; i < str.length; i++) {
+    hash = (hash << 5) - hash + str.charCodeAt(i);
+    hash |= 0;
+  }
+  const seed = Math.abs(hash);
+
+  // Palettes tailored dynamically to genres or seeds
+  const palettes = [
+    // 0: Deep Imperial Navy & Gold
+    { bg1: '#090d1a', bg2: '#1e1b4b', border1: '#fef08a', border2: '#d97706', plaque1: '#ffffff', plaque2: '#f8f4eb', banner: '#881337', text: '#0f172a', accent: '#b45309' },
+    // 1: Executive Onyx & Rose Gold
+    { bg1: '#09090b', bg2: '#18181b', border1: '#fde8e8', border2: '#f43f5e', plaque1: '#fafafa', plaque2: '#f4f4f5', banner: '#881337', text: '#18181b', accent: '#be123c' },
+    // 2: Emerald Visionary & Gold
+    { bg1: '#022c22', bg2: '#064e3b', border1: '#fef08a', border2: '#059669', plaque1: '#ffffff', plaque2: '#f0fdf4', banner: '#065f46', text: '#022c22', accent: '#047857' },
+    // 3: Deep Royal Sapphire & Platinum
+    { bg1: '#0f172a', bg2: '#1e293b', border1: '#e2e8f0', border2: '#38bdf8', plaque1: '#ffffff', plaque2: '#f1f5f9', banner: '#1e3a8a', text: '#0f172a', accent: '#0284c7' },
+    // 4: Classic Burgundy & Gold
+    { bg1: '#450a0a', bg2: '#7f1d1d', border1: '#fef08a', border2: '#d97706', plaque1: '#fffbe8', plaque2: '#fef3c7', banner: '#991b1b', text: '#450a0a', accent: '#b45309' }
+  ];
+
+  let selectedIndex = seed % palettes.length;
+  if (genre.includes('finance') || genre.includes('business') || genre.includes('success')) selectedIndex = 0;
+  if (genre.includes('thriller') || genre.includes('mystery') || genre.includes('crime')) selectedIndex = 1;
+  if (genre.includes('mindfulness') || genre.includes('health') || genre.includes('nature')) selectedIndex = 2;
+  if (genre.includes('sci-fi') || genre.includes('tech') || genre.includes('future')) selectedIndex = 3;
+  if (genre.includes('history') || genre.includes('classic') || genre.includes('biography')) selectedIndex = 4;
+
+  const pal = palettes[selectedIndex];
+
+  // Format title into multi-line if needed
+  const words = cleanTitle.split(' ');
+  let line1 = '';
+  let line2 = '';
+  if (words.length > 3) {
+    const mid = Math.ceil(words.length / 2);
+    line1 = words.slice(0, mid).join(' ').toUpperCase();
+    line2 = words.slice(mid).join(' ').toUpperCase();
+  } else {
+    line1 = cleanTitle.toUpperCase();
+  }
+
+  const authorDisplay = cleanAuthor.toUpperCase();
+
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 1600" width="1200" height="1600">
     <defs>
+      <linearGradient id="frameGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" stop-color="${pal.border1}"/>
+        <stop offset="50%" stop-color="${pal.border2}"/>
+        <stop offset="100%" stop-color="${pal.accent}"/>
+      </linearGradient>
       <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-        <stop offset="0%" stop-color="#0f172a"/>
-        <stop offset="50%" stop-color="#1e1b4b"/>
-        <stop offset="100%" stop-color="#311042"/>
+        <stop offset="0%" stop-color="${pal.bg1}"/>
+        <stop offset="100%" stop-color="${pal.bg2}"/>
       </linearGradient>
-      <linearGradient id="goldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-        <stop offset="0%" stop-color="#fef08a"/>
-        <stop offset="50%" stop-color="#f59e0b"/>
-        <stop offset="100%" stop-color="#b45309"/>
+      <linearGradient id="plaqueGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+        <stop offset="0%" stop-color="${pal.plaque1}"/>
+        <stop offset="100%" stop-color="${pal.plaque2}"/>
       </linearGradient>
-      <radialGradient id="glow" cx="50%" cy="40%" r="50%">
-        <stop offset="0%" stop-color="#6366f1" stop-opacity="0.4"/>
-        <stop offset="100%" stop-color="#000000" stop-opacity="0"/>
-      </radialGradient>
-      <filter id="shadow" x="-10%" y="-10%" width="120%" height="120%">
-        <feDropShadow dx="0" dy="10" stdDeviation="12" flood-color="#000" flood-opacity="0.6"/>
+      <linearGradient id="bannerGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+        <stop offset="0%" stop-color="${pal.banner}"/>
+        <stop offset="100%" stop-color="${pal.banner}"/>
+      </linearGradient>
+      <filter id="plaqueShadow" x="-10%" y="-10%" width="120%" height="120%">
+        <feDropShadow dx="0" dy="16" stdDeviation="24" flood-color="#000000" flood-opacity="0.6"/>
       </filter>
+      <pattern id="bgLattice" width="40" height="40" patternUnits="userSpaceOnUse">
+        <rect width="40" height="40" fill="none"/>
+        <path d="M 0 20 L 20 0 L 40 20 L 20 40 Z" fill="none" stroke="${pal.border2}" stroke-width="0.8" opacity="0.15"/>
+      </pattern>
     </defs>
+
+    <!-- Canvas Base Background -->
     <rect width="1200" height="1600" fill="url(#bgGrad)"/>
-    <rect width="1200" height="1600" fill="url(#glow)"/>
-    
-    <!-- Outer Frame Gold Border -->
-    <rect x="50" y="50" width="1100" height="1500" fill="none" stroke="url(#goldGrad)" stroke-width="4" opacity="0.6"/>
-    <rect x="70" y="70" width="1060" height="1460" fill="none" stroke="url(#goldGrad)" stroke-width="1.5" opacity="0.4"/>
-    
-    <!-- Center Emblem Geometric Art -->
-    <circle cx="600" cy="720" r="280" fill="none" stroke="url(#goldGrad)" stroke-width="2" opacity="0.3"/>
-    <circle cx="600" cy="720" r="200" fill="none" stroke="#818cf8" stroke-width="1" stroke-dasharray="8 8" opacity="0.4"/>
-    <polygon points="600,480 780,720 600,960 420,720" fill="none" stroke="url(#goldGrad)" stroke-width="3" opacity="0.5"/>
-    <polygon points="600,530 730,720 600,910 470,720" fill="none" stroke="#38bdf8" stroke-width="1.5" opacity="0.4"/>
-    
-    <!-- Header Genre Badge -->
-    <text x="600" y="220" font-family="'Plus Jakarta Sans', sans-serif" font-size="22" font-weight="800" fill="#a5f3fc" text-anchor="middle" letter-spacing="10" opacity="0.9">
-      SPECIAL PUBLISHING EDITION
+    <rect width="1200" height="1600" fill="url(#bgLattice)"/>
+
+    <!-- Outer Frame Border -->
+    <rect x="30" y="30" width="1140" height="1540" fill="none" stroke="url(#frameGrad)" stroke-width="10"/>
+    <rect x="44" y="44" width="1112" height="1512" fill="none" stroke="${pal.border1}" stroke-width="2" opacity="0.8"/>
+    <rect x="52" y="52" width="1096" height="1496" fill="none" stroke="${pal.border2}" stroke-width="1" stroke-dasharray="8 8" opacity="0.5"/>
+
+    <!-- Center Ivory/Cream Plaque Card -->
+    <rect x="90" y="90" width="1020" height="1420" rx="8" fill="url(#plaqueGrad)" filter="url(#plaqueShadow)"/>
+    <rect x="106" y="106" width="988" height="1388" rx="4" fill="none" stroke="url(#frameGrad)" stroke-width="3"/>
+    <rect x="116" y="116" width="968" height="1368" rx="2" fill="none" stroke="${pal.banner}" stroke-width="1.5"/>
+
+    <!-- Top Header Banner Box -->
+    <rect x="117" y="117" width="966" height="130" fill="url(#bannerGrad)"/>
+    <rect x="122" y="122" width="956" height="120" fill="none" stroke="${pal.border1}" stroke-width="1.5" opacity="0.8"/>
+    <text x="600" y="172" font-family="'Plus Jakarta Sans', sans-serif" font-size="20" font-weight="800" fill="${pal.border1}" text-anchor="middle" letter-spacing="6">
+      BESTSELLER EDITION
     </text>
-    
-    <!-- Title Text -->
-    <text x="600" y="400" font-family="'Playfair Display', Georgia, serif" font-size="72" font-weight="900" fill="url(#goldGrad)" text-anchor="middle" filter="url(#shadow)" letter-spacing="4">
-      ${titleWords}
+    <text x="600" y="210" font-family="'Plus Jakarta Sans', sans-serif" font-size="14" font-weight="700" fill="#ffffff" text-anchor="middle" letter-spacing="4">
+      AUTHORITATIVE PUBLISHING MASTERPIECE
     </text>
-    
-    <!-- Subtitle -->
-    <text x="600" y="1120" font-family="'Plus Jakarta Sans', sans-serif" font-size="28" font-style="italic" fill="#e2e8f0" text-anchor="middle" opacity="0.85">
-      An Authoritative Guide & Literary Masterpiece
+
+    <!-- Main Title Block -->
+    ${line2 ? `
+      <text x="600" y="390" font-family="'Playfair Display', Georgia, serif" font-size="74" font-weight="900" fill="${pal.text}" text-anchor="middle" letter-spacing="2">
+        ${line1}
+      </text>
+      <text x="600" y="485" font-family="'Playfair Display', Georgia, serif" font-size="74" font-weight="900" fill="${pal.text}" text-anchor="middle" letter-spacing="2">
+        ${line2}
+      </text>
+    ` : `
+      <text x="600" y="430" font-family="'Playfair Display', Georgia, serif" font-size="80" font-weight="900" fill="${pal.text}" text-anchor="middle" letter-spacing="2">
+        ${line1}
+      </text>
+    `}
+
+    <!-- Central Laurel Wreath & Open Book Emblem -->
+    <g transform="translate(600, 720)">
+      <circle cx="0" cy="0" r="120" fill="none" stroke="${pal.border2}" stroke-width="1.5" opacity="0.3"/>
+      <circle cx="0" cy="0" r="100" fill="#ffffff" stroke="url(#frameGrad)" stroke-width="2"/>
+      
+      <path d="M -60 -20 C -70 0, -70 40, -40 70 C -20 85, 0 85, 0 85 C 0 85, -20 70, -35 50 C -45 35, -45 0, -35 -20 Z" fill="${pal.accent}" opacity="0.7"/>
+      <path d="M 60 -20 C 70 0, 70 40, 40 70 C 20 85, 0 85, 0 85 C 0 85, 20 70, 35 50 C 45 35, 45 0, 35 -20 Z" fill="${pal.accent}" opacity="0.7"/>
+      
+      <g transform="translate(-24, -22) scale(1.2)">
+        <path d="M 2 8 Q 20 0, 20 18 L 20 36 Q 2 20, 2 8 Z" fill="#ffffff" stroke="${pal.banner}" stroke-width="2"/>
+        <path d="M 38 8 Q 20 0, 20 18 L 20 36 Q 38 20, 38 8 Z" fill="#ffffff" stroke="${pal.banner}" stroke-width="2"/>
+        <line x1="20" y1="18" x2="20" y2="36" stroke="${pal.accent}" stroke-width="2"/>
+      </g>
+    </g>
+
+    <!-- Subtitle Block -->
+    <text x="600" y="1000" font-family="'Playfair Display', Georgia, serif" font-size="28" font-style="italic" fill="${pal.accent}" text-anchor="middle" font-weight="600">
+      ${cleanSubtitle.length > 65 ? cleanSubtitle.slice(0, 65) + '...' : cleanSubtitle}
     </text>
-    
-    <!-- Author Credit -->
-    <line x1="450" y1="1300" x2="750" y2="1300" stroke="url(#goldGrad)" stroke-width="2" opacity="0.6"/>
-    <text x="600" y="1370" font-family="'Playfair Display', Georgia, serif" font-size="38" font-weight="700" fill="#ffffff" text-anchor="middle" letter-spacing="6">
-      BY MANUS PUBLISHING
+
+    <!-- Author Block -->
+    <line x1="260" y1="1130" x2="940" y2="1130" stroke="url(#frameGrad)" stroke-width="3"/>
+    <line x1="260" y1="1138" x2="940" y2="1138" stroke="${pal.banner}" stroke-width="1.5"/>
+
+    <text x="600" y="1230" font-family="'Playfair Display', Georgia, serif" font-size="54" font-weight="900" fill="${pal.text}" text-anchor="middle" letter-spacing="5">
+      ${authorDisplay}
     </text>
-    <text x="600" y="1420" font-family="'Plus Jakarta Sans', sans-serif" font-size="18" font-weight="600" fill="#94a3b8" text-anchor="middle" letter-spacing="8">
-      300 DPI KDP & ACX READY
+
+    <line x1="260" y1="1282" x2="940" y2="1282" stroke="${pal.banner}" stroke-width="1.5"/>
+    <line x1="260" y1="1290" x2="940" y2="1290" stroke="url(#frameGrad)" stroke-width="3"/>
+
+    <!-- Footer Credit -->
+    <text x="600" y="1380" font-family="'Plus Jakarta Sans', sans-serif" font-size="20" font-style="italic" font-weight="600" fill="#64748b" text-anchor="middle">
+      Author of Bestselling Works &amp; Master Guides
     </text>
   </svg>`;
 
   return `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(svg)))}`;
 }
 
-export async function createCover(prompt: string, apiKey?: string, inspirationImage?: string, isPremium: boolean = false) {
+export async function createCover(
+  prompt: string, 
+  apiKey?: string, 
+  inspirationImage?: string, 
+  isPremium: boolean = false,
+  bookDetails?: { title?: string; subtitle?: string; authorName?: string; genre?: string; description?: string }
+) {
   const ai = getAI(apiKey);
-  
-  const prefix = isPremium ? "MANUS AI PREMIUM PUBLISHING STYLE: " : "";
-  let expertPrompt = `${prefix}${prompt}. Cinematic lighting, ultra-high definition, professional 300 DPI book cover artwork, vibrant colors, striking centerpiece illustration.`;
-  
+  const title = bookDetails?.title || prompt;
+  const subtitle = bookDetails?.subtitle || '';
+  const authorName = bookDetails?.authorName || '';
+  const genre = bookDetails?.genre || '';
+  const description = bookDetails?.description || '';
+
+  console.info("Generating bespoke AI SVG book cover for:", title);
+
+  // Ask Gemini AI to generate a custom XML SVG cover specifically crafted for this book's title, genre, and details
+  const svgSystemPrompt = `You are an elite Book Cover Art Director. Generate a complete, standalone, valid XML SVG image (viewBox="0 0 1200 1600", width="1200", height="1600") for a high-end physical book cover.
+
+BOOK DETAILS:
+- Title: "${title}"
+- Subtitle: "${subtitle}"
+- Author: "${authorName}"
+- Genre: "${genre}"
+- Synopsis: "${description.slice(0, 300)}"
+
+COVER DESIGN REQUIREMENTS:
+1. Do NOT use photographic raster backgrounds or photographic images.
+2. Create a clean, elegant, vector-based bestseller cover layout with a crisp central plaque or framing border, genre-appropriate color palette, high-contrast typography, and clean decorative vector accents/emblems matching the theme.
+3. Include the exact Title, Subtitle, and Author Name in clear typography (<text> tags).
+4. Return ONLY valid XML SVG starting with <svg> and ending with </svg>. No markdown block quotes, no markdown explanation before or after.`;
+
   try {
-    expertPrompt = await artDirectorAgent(
-      expertPrompt, 
-      'cover', 
-      apiKey,
-      inspirationImage
-    );
-  } catch (err) {
-    console.warn("Art Director prompt synthesis failed, using raw prompt:", err);
-  }
+    const modelsToTry = ["gemini-3.6-flash", "gemini-2.5-flash", "gemini-3.1-flash-lite"];
+    for (const model of modelsToTry) {
+      try {
+        const response = await withRetry(() => ai.models.generateContent({
+          model,
+          contents: [{ parts: [{ text: svgSystemPrompt }] }]
+        }), !!apiKey);
 
-  console.log("Cover generation engineered prompt:", expertPrompt);
-
-  // Attempt 1: Imagen 3.0 via generateImages SDK call
-  try {
-    const response = await withRetry(() => ai.models.generateImages({
-      model: 'imagen-3.0-generate-002',
-      prompt: expertPrompt,
-      config: {
-        numberOfImages: 1,
-        outputMimeType: 'image/jpeg',
-        aspectRatio: '3:4',
-      },
-    }), !!apiKey);
-
-    const base64Image = response.generatedImages?.[0]?.image?.imageBytes;
-    if (base64Image) {
-      return `data:image/jpeg;base64,${base64Image}`;
-    }
-  } catch (err) {
-    console.warn("Imagen 3.0 generateImages attempt failed, trying fallback image models:", err);
-  }
-
-  // Attempt 2: gemini-3.6-flash / gemini-2.5-flash image generation
-  const imageModels = ["gemini-3.6-flash", "gemini-2.5-flash", "gemini-3.1-flash-image"];
-
-  for (const model of imageModels) {
-    try {
-      const response = await withRetry(() => ai.models.generateContent({
-        model,
-        contents: expertPrompt,
-        config: {
-          imageConfig: {
-            aspectRatio: "3:4",
-            imageSize: "1K"
-          }
+        const rawText = response.candidates?.[0]?.content?.parts?.[0]?.text || '';
+        const match = rawText.match(/<svg[\s\S]*?<\/svg>/i);
+        if (match && match[0]) {
+          const cleanSvg = match[0].trim();
+          console.info(`Gemini AI (${model}) successfully generated custom vector SVG cover!`);
+          return `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(cleanSvg)))}`;
         }
-      }), !!apiKey);
-      
-      for (const part of response.candidates?.[0]?.content?.parts || []) {
-        if (part.inlineData?.data) {
-          return `data:${part.inlineData.mimeType || 'image/jpeg'};base64,${part.inlineData.data}`;
-        }
+      } catch (e) {
+        console.warn(`Gemini SVG generation failed with model ${model}:`, e);
       }
-    } catch (err: any) {
-      console.warn(`Cover generation failed with model ${model}:`, err);
     }
+  } catch (err) {
+    console.warn("AI dynamic SVG cover generation failed, using dynamic procedural fallback:", err);
   }
 
-  // Guaranteed Procedural Fallback (Vector SVG Graphic artwork)
-  console.info("Using high-resolution procedural SVG artwork for cover creation.");
-  return generateProceduralCoverSvg(prompt);
+  // Fallback to dynamic, theme-adaptive procedural SVG
+  return generateProceduralCoverSvg(prompt, bookDetails, inspirationImage);
 }
 
 export async function synthesizeAudiobook(manuscript: string, apiKey?: string) {
@@ -1810,8 +1981,10 @@ ${chapterContent}
 
 INSTRUCTIONS:
 1. Seamlessly apply every critique fix into the narrative (e.g. resolve pacing slowdowns, sharpen hooks, deepen character emotions, clarify plot logic).
-2. Output ONLY the complete revised chapter text in clean Markdown format.
-3. Do NOT include meta-conversational text, preface, or commentary before/after the chapter content.`;
+2. MANUSCRIPT COHESION & CONTINUITY: Ensure total narrative, stylistic, character, and plot continuity with the rest of the manuscript. Do NOT retcon established events, change character personalities/names, or introduce contradictions.
+3. UNIQUE CHARACTER NAMES: Maintain existing character names without alteration. Do NOT give new characters generic or duplicated names.
+4. Output ONLY the complete revised chapter text in clean Markdown format.
+5. Do NOT include meta-conversational text, preface, or commentary before/after the chapter content.`;
 
   const response = await withRetry(() => ai.models.generateContent({
     model: "gemini-3.6-flash",
@@ -2118,22 +2291,32 @@ export interface AiScoreReport {
 }
 
 const AI_BUZZWORD_PATTERNS = [
-  "delve", "delves", "delving", "paradigm shift", "seamlessly", "holistic",
-  "ever-evolving", "landscape", "fostering", "synergy", "testament to",
-  "tapestry", "beacon", "vital role", "pivotal", "underscore", "underscores",
-  "in conclusion", "in today's fast-paced world", "intricate web",
-  "transformative journey", "beacon of", "testament", "multifaceted",
-  "unwavering", "paramount", "stark reminder", "rich tapestry", "game-changer",
-  "cornerstone", "crucial step", "it is worth noting", "it is important to remember",
-  "furthermore", "moreover", "spearhead", "harnessing", "unravel", "deep dive",
-  "embark", "realm", "indispensable", "a testament to"
+  "delve", "delves", "delving", "delved",
+  "paradigm shift", "seamlessly", "seamless", "holistic",
+  "ever-evolving", "ever evolving", "landscape", "fostering", "foster", "fosters", "fostered",
+  "synergy", "synergies", "testament to", "a testament to", "testament",
+  "tapestry", "rich tapestry", "vibrant tapestry", "intricate tapestry",
+  "beacon", "beacon of hope", "beacon of light", "vital role", "pivotal role", "pivotal",
+  "underscore", "underscores", "underscoring", "in conclusion", "in summary",
+  "in today's fast-paced world", "in today's world", "intricate web", "intricate",
+  "transformative journey", "transformative", "multifaceted", "unwavering",
+  "paramount", "stark reminder", "game-changer", "gamechanger", "cornerstone",
+  "crucial step", "crucial role", "crucial", "it is worth noting", "it's worth noting",
+  "it is important to remember", "it is essential to", "furthermore", "moreover",
+  "spearhead", "spearheading", "harnessing", "harness", "unravel", "unraveling",
+  "deep dive", "dive deep", "embark", "embark on", "embarks", "embarking",
+  "realm", "realms", "indispensable", "resonate", "resonates", "resonating",
+  "illuminate", "illuminating", "illuminates", "navigate", "navigating", "navigates",
+  "elevate", "elevates", "elevating", "empower", "empowers", "empowering",
+  "demystify", "demystifying", "myriad", "a myriad of", "plethora", "a plethora of",
+  "at its core", "catalyst", "symphony", "hallmark", "bedrock"
 ];
 
 export function analyzeAiScore(text: string): AiScoreReport {
   if (!text || text.trim().length === 0) {
     return {
-      aiProbability: 5,
-      humanProbability: 95,
+      aiProbability: 3,
+      humanProbability: 97,
       burstinessScore: 90,
       perplexityScore: 90,
       flaggedBuzzwords: [],
@@ -2144,7 +2327,6 @@ export function analyzeAiScore(text: string): AiScoreReport {
   }
 
   const cleanText = text.replace(/```[\s\S]*?```/g, '').replace(/<[^>]*>/g, '');
-  const lowerText = cleanText.toLowerCase();
 
   // 1. Scan for AI buzzwords
   const flaggedMap = new Map<string, number>();
@@ -2176,7 +2358,7 @@ export function analyzeAiScore(text: string): AiScoreReport {
   // Burstiness ratio: higher stdDev relative to mean = high burstiness (human-like)
   const stdDevRatio = meanLength > 0 ? (stdDev / meanLength) : 0;
   // Standard human writing stdDevRatio is ~0.5 to 0.9. AI tends to be ~0.2 to 0.35
-  const burstinessScore = Math.min(100, Math.max(10, Math.round((stdDevRatio / 0.7) * 85)));
+  const burstinessScore = Math.min(100, Math.max(15, Math.round((stdDevRatio / 0.65) * 85)));
 
   // 3. Perplexity & Lexical Richness
   const words = cleanText.toLowerCase().split(/\s+/).filter(w => w.length > 2);
@@ -2185,14 +2367,20 @@ export function analyzeAiScore(text: string): AiScoreReport {
   const perplexityScore = Math.min(100, Math.max(15, Math.round(lexicalDiversity * 140)));
 
   // 4. Combined AI Probability calculation
-  const buzzwordDensityPer1k = totalWords > 0 ? (totalBuzzwordMatches / (totalWords / 1000)) : 0;
-  let rawAiProbability = (buzzwordDensityPer1k * 18) + ((100 - burstinessScore) * 0.4) + ((100 - perplexityScore) * 0.25);
+  let aiProbability = 5;
 
-  if (totalBuzzwordMatches === 0 && burstinessScore > 65) {
-    rawAiProbability = Math.min(rawAiProbability, 18);
+  if (totalBuzzwordMatches === 0) {
+    if (burstinessScore >= 55) {
+      aiProbability = Math.max(2, Math.min(6, Math.round(12 - (burstinessScore / 10))));
+    } else {
+      aiProbability = Math.max(6, Math.min(14, Math.round(20 - (burstinessScore / 10))));
+    }
+  } else {
+    const buzzwordDensityPer1k = totalWords > 0 ? (totalBuzzwordMatches / (totalWords / 1000)) : totalBuzzwordMatches;
+    let rawAi = (totalBuzzwordMatches * 12) + (buzzwordDensityPer1k * 15) + ((100 - burstinessScore) * 0.3) + ((100 - perplexityScore) * 0.2);
+    aiProbability = Math.min(98, Math.max(15, Math.round(rawAi)));
   }
 
-  const aiProbability = Math.min(98, Math.max(5, Math.round(rawAiProbability)));
   const humanProbability = 100 - aiProbability;
 
   const suggestions: string[] = [];
@@ -2231,43 +2419,103 @@ export function sanitizeAiBuzzwords(text: string): string {
     [/\bdelves into\b/gi, "examines"],
     [/\bdelve into\b/gi, "explore"],
     [/\bdelving into\b/gi, "exploring"],
-    [/\bdelve\b/gi, "explore"],
+    [/\bdelved into\b/gi, "explored"],
+    [/\bdelve\b/gi, "examine"],
+    [/\bdelves\b/gi, "examines"],
+    [/\bdelving\b/gi, "exploring"],
     [/\ba testament to\b/gi, "proof of"],
     [/\btestament to\b/gi, "proof of"],
+    [/\btestament\b/gi, "proof"],
     [/\bparadigm shift\b/gi, "major shift"],
     [/\bseamlessly\b/gi, "smoothly"],
+    [/\bseamless\b/gi, "smooth"],
     [/\bever-evolving\b/gi, "changing"],
+    [/\bever evolving\b/gi, "changing"],
     [/\bholistic approach\b/gi, "comprehensive approach"],
     [/\bholistic\b/gi, "comprehensive"],
     [/\bfostering a\b/gi, "building a"],
     [/\bfostering\b/gi, "nurturing"],
+    [/\bfosters\b/gi, "encourages"],
+    [/\bfostered\b/gi, "built"],
     [/\bsynergy\b/gi, "collaboration"],
+    [/\bsynergies\b/gi, "collaborations"],
     [/\bvital role\b/gi, "key role"],
     [/\bpivotal role\b/gi, "central role"],
+    [/\bpivotal moment\b/gi, "key turning point"],
     [/\bpivotal\b/gi, "crucial"],
     [/\bintricate web\b/gi, "complex network"],
+    [/\bintricate\b/gi, "detailed"],
     [/\brich tapestry\b/gi, "vibrant mix"],
+    [/\bvibrant tapestry\b/gi, "rich texture"],
     [/\btapestry\b/gi, "mosaic"],
+    [/\bbeacon of hope\b/gi, "symbol of hope"],
+    [/\bbeacon of light\b/gi, "guiding light"],
     [/\bbeacon of\b/gi, "symbol of"],
+    [/\bbeacon\b/gi, "guide"],
     [/\bin today's fast-paced world\b/gi, "today"],
     [/\bin today's world\b/gi, "today"],
+    [/\bin an era where\b/gi, "when"],
     [/\bin conclusion,\b/gi, "overall,"],
     [/\bin summary,\b/gi, "in short,"],
     [/\bit is worth noting that\b/gi, ""],
+    [/\bit's worth noting that\b/gi, ""],
+    [/\bit is worth noting\b/gi, ""],
     [/\bit is important to remember that\b/gi, ""],
+    [/\bit is essential to\b/gi, "we must"],
     [/\btransformative journey\b/gi, "growth process"],
+    [/\btransformative\b/gi, "profound"],
     [/\bgame-changer\b/gi, "turning point"],
+    [/\bgamechanger\b/gi, "turning point"],
     [/\bspearhead\b/gi, "lead"],
+    [/\bspearheading\b/gi, "leading"],
     [/\bharnessing the power of\b/gi, "using"],
-    [/\bunravel the\b/gi, "explain the"]
+    [/\bharnessing\b/gi, "using"],
+    [/\bharness\b/gi, "use"],
+    [/\bunravel the\b/gi, "explain the"],
+    [/\bunraveling\b/gi, "explaining"],
+    [/\bdeep dive\b/gi, "detailed look"],
+    [/\bdive deep into\b/gi, "examine"],
+    [/\bembark on a journey\b/gi, "begin"],
+    [/\bembark on\b/gi, "start"],
+    [/\bembarking on\b/gi, "starting"],
+    [/\brealm of\b/gi, "field of"],
+    [/\brealm\b/gi, "domain"],
+    [/\bindispensable\b/gi, "essential"],
+    [/\bresonate deeply with\b/gi, "connect with"],
+    [/\bresonates with\b/gi, "connects with"],
+    [/\bresonates\b/gi, "connects"],
+    [/\billuminate\b/gi, "clarify"],
+    [/\billuminating\b/gi, "revealing"],
+    [/\bdemystify\b/gi, "simplify"],
+    [/\bdemystifying\b/gi, "simplifying"],
+    [/\bmyriad of\b/gi, "many"],
+    [/\ba myriad of\b/gi, "many"],
+    [/\bplethora of\b/gi, "abundance of"],
+    [/\ba plethora of\b/gi, "many"],
+    [/\bat its core,\b/gi, "fundamentally,"],
+    [/\bfirst and foremost,\b/gi, "first,"],
+    [/\bwithout further ado,\b/gi, ""],
+    [/\bunderscore the importance of\b/gi, "highlight"],
+    [/\bunderscores\b/gi, "highlights"],
+    [/\bunderscore\b/gi, "highlight"],
+    [/\bunderscoring\b/gi, "highlighting"],
+    [/\bmultifaceted\b/gi, "complex"],
+    [/\bunwavering\b/gi, "steady"],
+    [/\bparamount\b/gi, "top priority"],
+    [/\bcornerstone\b/gi, "foundation"],
+    [/\bbedrock\b/gi, "foundation"],
+    [/\bhallmark of\b/gi, "defining feature of"],
+    [/\bcatalyst for\b/gi, "spark for"],
+    [/\bfurthermore,\b/gi, "also,"],
+    [/\bmoreover,\b/gi, "in addition,"]
   ];
 
   replacements.forEach(([regex, replacement]) => {
     cleaned = cleaned.replace(regex, replacement);
   });
 
-  // Clean up double spaces caused by empty replacements
-  return cleaned.replace(/  +/g, ' ');
+  // Clean up double spaces or floating punctuation
+  return cleaned.replace(/  +/g, ' ').replace(/ ,/g, ',');
 }
 
 export async function humanizeManuscript(
@@ -2282,7 +2530,7 @@ export async function humanizeManuscript(
   if (mode === 'bypass') {
     modeInstruction = `MODE: MAXIMUM AI DETECTION BYPASS (HIGH BURSTINESS)
     - Aggressively rewrite sentences to vary sentence length continuously (alternate short 3-6 word punchy sentences with longer descriptive multi-clause thoughts).
-    - Eliminate EVERY SINGLE AI cliché, corporate crutch, and formulaic transition.
+    - Eliminate EVERY SINGLE AI cliché, corporate crutch, academic filler word, and formulaic transition.
     - Ingest active, visceral verbs, grounded human observations, and vivid natural metaphors.`;
   } else if (mode === 'authorial') {
     modeInstruction = `MODE: AUTHORIAL VOICE ENHANCEMENT & PROSE POLISH
@@ -2296,16 +2544,17 @@ export async function humanizeManuscript(
     - Maintain smooth readability, natural cadence, and sentence length diversity.`;
   }
 
-  const prompt = `You are an elite literary editor and manuscript humanization expert specializing in turning AI drafts into genuine, human-written prose that bypasses detectors (Turnitin, GPTZero, CopyLeaks).
+  const prompt = `You are an elite literary editor and manuscript humanization expert specializing in turning AI drafts into genuine, human-written prose that bypasses AI detectors (Turnitin, GPTZero, CopyLeaks).
 
-TASK: Rewrite and humanize the manuscript text below.
+TASK: Completely rewrite and humanize the manuscript text below.
 
 CRITICAL LAWS:
 1. RETAIN ALL FACTUAL CONTENT & STRUCTURE: Keep all chapter subheadings (H2, H3), key arguments, bullet points, and core logic intact. Do NOT shorten or delete content.
 2. HIGH BURSTINESS & SENTENCE VARIETY: Alternate sentence length drastically. Mix short, direct, punchy sentences (3-7 words) with rich, descriptive thoughts.
-3. ABSOLUTE BAN ON AI BUZZWORDS & CLICHÉS: Never use "delve", "paradigm shift", "seamlessly", "holistic", "ever-evolving", "landscape", "fostering", "synergy", "testament to", "tapestry", "beacon", "vital role", "pivotal", "underscore", "in conclusion", "in today's fast-paced world", "intricate web", "transformative journey", "furthermore", "moreover".
-4. ${modeInstruction}
-5. FORMATTING: Output ONLY the complete revised Markdown manuscript. Language: ${language}.
+3. ABSOLUTE BAN ON AI BUZZWORDS & CLICHÉS: Never use "delve", "paradigm shift", "seamlessly", "holistic", "ever-evolving", "landscape", "fostering", "synergy", "testament to", "tapestry", "beacon", "vital role", "pivotal", "underscore", "in conclusion", "in today's fast-paced world", "intricate web", "transformative journey", "furthermore", "moreover", "realm", "embark", "harness", "unravel", "demystify", "myriad", "plethora".
+4. MANUSCRIPT CONTINUITY & CHARACTER NAMES: Maintain all character names, key terms, and narrative continuity with the rest of the manuscript without altering proper nouns or facts.
+5. ${modeInstruction}
+6. FORMATTING: Output ONLY the complete revised Markdown manuscript. Language: ${language}.
 
 MANUSCRIPT TEXT TO HUMANIZE:
 """
@@ -2317,7 +2566,7 @@ ${content}
       model: modelName,
       contents: [{ role: "user", parts: [{ text: prompt }] }],
       config: {
-        systemInstruction: "You are a world-class literary editor. You transform robotic AI-generated drafts into organic, dynamic, human-written prose with high burstiness and authentic voice."
+        systemInstruction: "You are a world-class literary editor. You transform robotic AI-generated drafts into organic, dynamic, human-written prose with high burstiness, zero buzzwords, and authentic voice."
       }
     });
     return response.text || content;
