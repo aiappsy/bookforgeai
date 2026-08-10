@@ -7,15 +7,58 @@ export interface Attachment {
 }
 
 function getAI(customApiKey?: string) {
-  const key = (customApiKey && customApiKey.trim() !== '' && customApiKey !== 'undefined' && customApiKey !== 'null') 
-    ? customApiKey.trim() 
-    : process.env.GEMINI_API_KEY;
+  let key = customApiKey;
 
-  if (!key || key === 'undefined' || key === 'null') {
-    console.error("Gemini API Key missing or invalid in environment/settings.");
-    throw new Error("Missing API Key. Please click the gear icon in the bottom left to add your Gemini API Key.");
+  if (!key || key.trim() === '' || key === 'undefined' || key === 'null') {
+    if (typeof window !== 'undefined') {
+      key = localStorage.getItem('user_custom_gemini_key') || localStorage.getItem('gemini_api_key') || undefined;
+    }
   }
-  return new GoogleGenAI({ apiKey: key });
+
+  if (!key || key.trim() === '' || key === 'undefined' || key === 'null') {
+    key = process.env.GEMINI_API_KEY;
+  }
+
+  if (!key || key.trim() === '' || key === 'undefined' || key === 'null') {
+    console.error("Gemini API Key missing in BYOK mode.");
+    throw new Error("Gemini API Key Missing (BYOK Mode). Please open User Settings -> Personal API Keys to enter your Google Gemini API key.");
+  }
+
+  return new GoogleGenAI({
+    apiKey: key.trim(),
+    httpOptions: { baseUrl: "https://generativelanguage.googleapis.com" }
+  });
+}
+
+export async function testGeminiApiKey(apiKey: string): Promise<{ success: boolean; message: string }> {
+  try {
+    const ai = new GoogleGenAI({
+      apiKey: apiKey.trim(),
+      httpOptions: { baseUrl: "https://generativelanguage.googleapis.com" }
+    });
+    const response = await ai.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: [{ role: "user", parts: [{ text: "Hello! Confirm status in 5 words." }] }]
+    });
+    if (response.text) {
+      return { success: true, message: "Gemini API Key successfully verified and working!" };
+    } else {
+      return { success: false, message: "Received empty response from Gemini API." };
+    }
+  } catch (err: any) {
+    let raw = err?.message || "Failed to validate Gemini API key.";
+    if (typeof raw === 'string' && raw.trim().startsWith('{')) {
+      try {
+        const parsed = JSON.parse(raw.trim());
+        if (parsed?.error?.message) {
+          raw = parsed.error.message;
+        }
+      } catch {
+        // keep raw
+      }
+    }
+    return { success: false, message: raw };
+  }
 }
 
 async function withRetry<T>(fn: () => Promise<T>, hasCustomKey: boolean, maxRetries = 3, initialDelay = 2000): Promise<T> {

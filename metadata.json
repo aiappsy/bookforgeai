@@ -1,5 +1,6 @@
 {
   "name": "manus (byaiappsy)",
-  "description": "Multi-user BYOK manuscript generator with custom categories and AI settings",
-  "requestFramePermissions": []
+  "description": "Multi-user BYOK manuscript generator with custom categories, PayPal subscriptions, and AI Support Assistant",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

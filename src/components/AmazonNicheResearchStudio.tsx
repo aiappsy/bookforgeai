@@ -114,13 +114,13 @@ export const AmazonNicheResearchStudio: React.FC<AmazonNicheResearchStudioProps>
         <div className="relative z-10 flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
           <div className="space-y-2 max-w-2xl">
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-500/20 border border-amber-400/30 text-amber-300 text-xs font-bold uppercase tracking-wider">
-              <Sparkles className="w-3.5 h-3.5 text-amber-400" /> Amazon KDP Market Intelligence
+              <Sparkles className="w-3.5 h-3.5 text-amber-400" /> AI Market Opportunity Model (Web Grounded)
             </div>
             <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-white">
-              Amazon Niche Opportunity & Keyword Spotter
+              Amazon Market Opportunity & Keyword Intelligence Model
             </h1>
             <p className="text-zinc-300 text-sm leading-relaxed">
-              Scan reader search demand, keyword competition, bestseller rank thresholds (BSR), and profit metrics on Amazon. Discover low-competition niches and content gaps to launch a #1 Bestseller.
+              Synthesizes real-time web search grounding, Amazon reader search volume patterns, keyword competition levels, BSR rank thresholds, and reader review content gaps to formulate high-profit book strategies.
             </p>
           </div>
 

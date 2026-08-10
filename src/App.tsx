@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useMemo, ChangeEvent } from 'react';
-import { BookOpen, FileText, Image as ImageIcon, Headphones, Settings, CheckCircle2, Loader2, Download, PlayCircle, MessageSquare, Send, ChevronRight, ChevronLeft, PanelLeft, List, Key, X, UploadCloud, Library, Plus, Paperclip, User, Tag, Type, Sparkles, Link, Menu, Trash2, Save, Edit3, Sliders, Check, RotateCcw, RotateCw, History, SlidersHorizontal, Palette, Copy, Wand2, LifeBuoy, AlertTriangle, RefreshCw, Layers, Box, Eye, Book, Megaphone, Share2, Mail, Globe, Compass, ExternalLink, Calendar, Award, Search, HelpCircle, DollarSign, Square, ListTree, AlignLeft, Printer, TrendingUp, Brain } from 'lucide-react';
+import { BookOpen, FileText, Image as ImageIcon, Headphones, Settings, CheckCircle2, Loader2, Download, PlayCircle, MessageSquare, Send, ChevronRight, ChevronLeft, PanelLeft, List, Key, X, UploadCloud, Library, Plus, Paperclip, User, Tag, Type, Sparkles, Link, Menu, Trash2, Save, Edit3, Sliders, Check, RotateCcw, RotateCw, History, SlidersHorizontal, Palette, Copy, Wand2, LifeBuoy, AlertTriangle, RefreshCw, Layers, Box, Eye, Book, Megaphone, Share2, Mail, Globe, Compass, ExternalLink, Calendar, Award, Search, HelpCircle, DollarSign, Square, ListTree, AlignLeft, Printer, TrendingUp, Brain, Bot } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import Markdown from 'react-markdown';
 import {
@@ -34,7 +34,7 @@ import {
 import { exportToDocx, exportPublishingZipBundle, exportLandingPageHtml, getLandingPageHtmlString } from './services/exportService';
 import { extractTextFromFile } from './utils/fileParser';
 import { saveProject, loadProject, getProjectsList, deleteProject, getUserSettings, saveUserSettings, saveEmergencySnapshot, scanAllLocalBackups, savePublishedLandingPage, getPublishedLandingPage, deletePublishedLandingPage, PublishedLandingData } from './services/storage';
-import { auth, loginWithGoogle, logoutUser } from './services/firebase';
+import { auth, loginWithGoogle, logoutUser, getUserProfile, ensureUserProfile, trackAIWordUsage, UserProfile } from './services/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
 import { CommandPalette } from './components/CommandPalette';
 import { HelpDrawer } from './components/HelpDrawer';
@@ -46,6 +46,14 @@ import { HumanizerStudio } from './components/HumanizerStudio';
 import { AudiobookStudio } from './components/AudiobookStudio';
 import { AmazonNicheResearchStudio } from './components/AmazonNicheResearchStudio';
 import { ContinuityMemoryModal } from './components/ContinuityMemoryModal';
+import { AuthModal } from './components/AuthModal';
+import { SubscriptionModal } from './components/SubscriptionModal';
+import { AdminPayPalSettingsModal } from './components/AdminPayPalSettingsModal';
+import { UserSettingsModal } from './components/UserSettingsModal';
+import { SupportAiAssistantModal } from './components/SupportAiAssistantModal';
+import { PipelineStepper } from './components/PipelineStepper';
+import { VersionHistoryModal, ChapterRevision } from './components/VersionHistoryModal';
+import { GenerationProgressLogger } from './components/GenerationProgressLogger';
 import { humanizeManuscript, analyzeAiScore } from './services/geminiService';
 
 type ViewMode = 'library' | 'setup' | 'details' | 'outline' | 'toc' | 'chapter' | 'assets' | 'marketing' | 'humanizer' | 'audiobook' | 'research';
@@ -381,6 +389,7 @@ interface Chapter {
   title: string;
   content: string;
   status: 'idle' | 'generating' | 'done';
+  revisions?: ChapterRevision[];
 }
 
 interface ChatMessage {
@@ -602,7 +611,7 @@ function parseMarkdownToChaptersLocally(rawText: string) {
 
 const generateId = () => Math.random().toString(36).substring(2, 9);
 
-function ChapterView({ chapter, onContentChange, onRegenerate, onHumanize, onDelete, onUndo, canUndo, components }: { chapter: Chapter, onContentChange: (c: string) => void, onRegenerate: () => void, onHumanize?: () => void, onDelete?: () => void, onUndo?: () => void, canUndo?: boolean, components: any }) {
+function ChapterView({ chapter, onContentChange, onRegenerate, onHumanize, onShowVersionHistory, onDelete, onUndo, canUndo, components }: { chapter: Chapter, onContentChange: (c: string) => void, onRegenerate: () => void, onHumanize?: () => void, onShowVersionHistory?: () => void, onDelete?: () => void, onUndo?: () => void, canUndo?: boolean, components: any }) {
   const [isEditing, setIsEditing] = useState(false);
   const isAuthorPage = chapter.title.toLowerCase().includes('about the author');
 
@@ -660,6 +669,16 @@ function ChapterView({ chapter, onContentChange, onRegenerate, onHumanize, onDel
         </div>
 
         <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+          {onShowVersionHistory && (
+            <button
+              onClick={onShowVersionHistory}
+              className="flex-1 sm:flex-none justify-center items-center gap-1.5 bg-zinc-100 hover:bg-zinc-200 text-zinc-800 border border-zinc-300 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors shadow-2xs cursor-pointer"
+              title="Inspect previous chapter drafts, humanized revisions, and revert to earlier versions"
+            >
+              <History className="w-3.5 h-3.5 text-indigo-600" />
+              Revisions ({chapter.revisions?.length || 1})
+            </button>
+          )}
           {canUndo && onUndo && (
             <button
               onClick={onUndo}
@@ -897,9 +916,15 @@ interface BookSnapshot {
 }
 
 export default function App() {
-  // Auth State
+  // Auth & SaaS Subscription State
   const [user, setUser] = useState<any>(null);
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [authChecking, setAuthChecking] = useState(true);
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const [isSubscriptionModalOpen, setIsSubscriptionModalOpen] = useState(false);
+  const [isAdminPayPalModalOpen, setIsAdminPayPalModalOpen] = useState(false);
+  const [isUserSettingsOpen, setIsUserSettingsOpen] = useState(false);
+  const [isSupportAssistantOpen, setIsSupportAssistantOpen] = useState(false);
 
   // Mobile & Sidebar UI state
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -956,11 +981,13 @@ export default function App() {
   });
   const [showContinuityModal, setShowContinuityModal] = useState<boolean>(false);
 
-  // History & Regret (Undo / Redo) State
+  // History & Regret (Undo / Redo / Version Stack) State
   const [historyStack, setHistoryStack] = useState<BookSnapshot[]>([]);
   const [historyIndex, setHistoryIndex] = useState<number>(-1);
   const [historyNotice, setHistoryNotice] = useState<string | null>(null);
   const [showHistoryModal, setShowHistoryModal] = useState<boolean>(false);
+  const [showVersionHistoryModal, setShowVersionHistoryModal] = useState<boolean>(false);
+  const [versionHistoryChapterId, setVersionHistoryChapterId] = useState<string | null>(null);
   const [chapterToDelete, setChapterToDelete] = useState<Chapter | null>(null);
 
   // Copywriting Style Extractor State
@@ -1366,6 +1393,12 @@ export default function App() {
     const unsub = onAuthStateChanged(auth, async (u) => {
       setUser(u);
       if (u) {
+        try {
+          const prof = await ensureUserProfile(u);
+          setUserProfile(prof);
+        } catch (e) {
+          console.warn("Could not load user profile:", e);
+        }
         const conf = await getUserSettings();
         if (conf?.customApiKey) setCustomApiKey(conf.customApiKey);
         if (conf?.socials || conf?.defaultSocials) {
@@ -1376,6 +1409,8 @@ export default function App() {
           }));
         }
         getProjectsList().then(setSavedProjects);
+      } else {
+        setUserProfile(null);
       }
       setAuthChecking(false);
     });
@@ -1814,7 +1849,18 @@ export default function App() {
         return;
       }
 
-      setChapters(prev => prev.map(c => c.id === chapterId ? { ...c, content, status: 'done' } : c));
+      setChapters(prev => prev.map(c => {
+        if (c.id !== chapterId) return c;
+        const existingRevs = c.revisions || [];
+        const newRev: ChapterRevision = {
+          id: generateId(),
+          timestamp: Date.now(),
+          label: existingRevs.length === 0 ? 'Initial AI Chapter Generation' : `AI Rewrite Pass #${existingRevs.length + 1}`,
+          content,
+          wordCount: content.trim().split(/\s+/).filter(Boolean).length
+        };
+        return { ...c, content, status: 'done', revisions: [...existingRevs, newRev] };
+      }));
 
       // Asynchronously generate & cache continuity summary for this chapter
       summarizeChapterForContinuity(chapter.title, content, customApiKey)
@@ -4138,18 +4184,44 @@ export default function App() {
 
   if (!user) {
     return (
-      <div className="flex flex-col h-screen items-center justify-center bg-zinc-50">
-        <div className="bg-white p-10 rounded-2xl border border-zinc-200 shadow-xl max-w-md w-full text-center">
-            <BookOpen className="w-16 h-16 text-indigo-600 mx-auto mb-6" />
-            <h1 className="text-3xl font-bold tracking-tight text-zinc-900 mb-2">manus</h1>
-            <p className="text-zinc-500 mb-8">(byaiappsy) — Multi-user BYOK publication suite.</p>
-            <button
+      <div className="flex flex-col h-screen items-center justify-center bg-zinc-900 text-white p-4 relative overflow-hidden">
+        {/* Background gradient orb */}
+        <div className="absolute -top-40 -right-40 w-96 h-96 bg-emerald-600/20 rounded-full blur-3xl pointer-events-none" />
+        <div className="absolute -bottom-40 -left-40 w-96 h-96 bg-indigo-600/20 rounded-full blur-3xl pointer-events-none" />
+
+        <div className="bg-zinc-800/90 backdrop-blur-xl p-10 rounded-3xl border border-zinc-700 shadow-2xl max-w-md w-full text-center relative z-10 space-y-6">
+            <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 shadow-lg mx-auto mb-2">
+              <BookOpen className="w-8 h-8 text-zinc-950" />
+            </div>
+            <div>
+              <h1 className="text-3xl font-black tracking-tight text-white">manus</h1>
+              <p className="text-emerald-400 font-bold text-xs uppercase tracking-widest mt-1">Multi-User SaaS AI Publishing Suite</p>
+            </div>
+            <p className="text-zinc-400 text-xs leading-relaxed max-w-xs mx-auto">
+              Cloud-synced manuscript generator, 300 DPI print covers, audiobook synthesis, and PayPal subscription integration.
+            </p>
+
+            <div className="space-y-3 pt-2">
+              <button
+                onClick={() => setIsAuthModalOpen(true)}
+                className="w-full bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-extrabold flex items-center justify-center gap-2 py-3.5 px-4 rounded-2xl transition shadow-lg cursor-pointer text-sm"
+              >
+                <span>Sign In / Create Account</span>
+              </button>
+              <button
                 onClick={loginWithGoogle}
-                className="w-full bg-indigo-600 text-white font-semibold flex items-center justify-center gap-3 py-3 rounded-xl hover:bg-indigo-700 transition"
-            >
-                Sign in with Google
-            </button>
+                className="w-full bg-zinc-700/80 hover:bg-zinc-700 text-zinc-200 border border-zinc-600 font-bold flex items-center justify-center gap-2 py-3 px-4 rounded-2xl transition cursor-pointer text-xs"
+              >
+                <span>Quick Sign in with Google</span>
+              </button>
+            </div>
         </div>
+
+        <AuthModal
+          isOpen={isAuthModalOpen}
+          onClose={() => setIsAuthModalOpen(false)}
+          onSuccess={() => refreshLibrary()}
+        />
       </div>
     );
   }
@@ -4181,12 +4253,51 @@ export default function App() {
           </button>
         </div>
         
-        <div className={`p-4 border-b border-zinc-100 flex items-center ${sidebarCollapsed ? 'justify-center md:p-3' : 'gap-3'} bg-zinc-50`}>
-           <img src={user.photoURL} alt="User" className="w-8 h-8 rounded-full border border-zinc-200 shrink-0" referrerPolicy="no-referrer" title={user.displayName || 'User'} />
+        {/* User Account & Subscription Badge Widget */}
+        <div className={`p-3.5 border-b border-zinc-200 flex flex-col ${sidebarCollapsed ? 'items-center justify-center' : 'gap-2.5'} bg-zinc-50/80`}>
+           <div className="flex items-center gap-2.5 w-full">
+             <img src={user.photoURL || `https://api.dicebear.com/7.x/initials/svg?seed=${user.displayName || 'Author'}`} alt="User" className="w-8 h-8 rounded-full border border-zinc-200 shrink-0" referrerPolicy="no-referrer" title={user.displayName || 'User'} />
+             {!sidebarCollapsed && (
+               <div className="flex-1 overflow-hidden">
+                   <div className="flex items-center justify-between gap-1">
+                     <p className="text-xs font-bold text-zinc-900 truncate">{userProfile?.displayName || user.displayName || 'Author'}</p>
+                     <span className={`text-[9px] font-black uppercase px-1.5 py-0.5 rounded-md ${
+                       userProfile?.plan === 'agency' ? 'bg-indigo-600 text-white' :
+                       userProfile?.plan === 'pro' ? 'bg-emerald-600 text-white' :
+                       'bg-zinc-200 text-zinc-700'
+                     }`}>
+                       {userProfile?.plan || 'Free'}
+                     </span>
+                   </div>
+                   <p className="text-[10px] text-zinc-500 truncate">{user.email}</p>
+               </div>
+             )}
+           </div>
+
            {!sidebarCollapsed && (
-             <div className="flex-1 overflow-hidden">
-                 <p className="text-xs font-semibold text-zinc-900 truncate">{user.displayName}</p>
-                 <button onClick={logoutUser} className="text-[10px] text-zinc-500 hover:text-indigo-600 transition">Sign Out</button>
+             <div className="flex items-center justify-between gap-1 pt-1 border-t border-zinc-200/80 w-full text-[10px]">
+               <button
+                 onClick={() => setIsSubscriptionModalOpen(true)}
+                 className="text-blue-700 font-bold hover:underline flex items-center gap-1 cursor-pointer"
+                 title="Subscription Plans"
+               >
+                 <Sparkles className="w-3 h-3 text-amber-500" />
+                 <span>PayPal SaaS</span>
+               </button>
+               <button
+                 onClick={() => setIsAdminPayPalModalOpen(true)}
+                 className="text-zinc-600 font-bold hover:text-blue-700 hover:underline flex items-center gap-1 cursor-pointer"
+                 title="PayPal Admin API Settings"
+               >
+                 <Sliders className="w-3 h-3 text-blue-600" />
+                 <span>Admin</span>
+               </button>
+               <button
+                 onClick={logoutUser}
+                 className="text-zinc-500 hover:text-red-600 font-medium cursor-pointer"
+               >
+                 Sign Out
+               </button>
              </div>
            )}
         </div>
@@ -4213,6 +4324,21 @@ export default function App() {
               <div className={`flex items-center ${sidebarCollapsed ? 'justify-center' : 'gap-3'}`}>
                 <Plus className="w-4 h-4 shrink-0" />
                 {!sidebarCollapsed && <span>New Book</span>}
+              </div>
+            </button>
+            <button
+              onClick={() => setIsSupportAssistantOpen(true)}
+              title={sidebarCollapsed ? "AI Support Assistant" : undefined}
+              className={`w-full flex items-center ${sidebarCollapsed ? 'justify-center px-2 py-2.5' : 'justify-between px-3 py-2'} rounded-lg text-sm font-medium transition-all bg-gradient-to-r from-blue-50 to-indigo-50 text-blue-800 border border-blue-200/60 hover:border-blue-300 shadow-2xs cursor-pointer`}
+            >
+              <div className={`flex items-center ${sidebarCollapsed ? 'justify-center' : 'gap-3'}`}>
+                <Bot className="w-4 h-4 shrink-0 text-blue-600" />
+                {!sidebarCollapsed && (
+                  <span className="flex items-center gap-1 font-bold">
+                    <span>AI Support Expert</span>
+                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                  </span>
+                )}
               </div>
             </button>
           </nav>
@@ -4505,14 +4631,23 @@ export default function App() {
           )}
         </div>
         
-        <div className={`p-4 border-t border-zinc-200 ${sidebarCollapsed ? 'flex justify-center p-2' : ''}`}>
+        <div className={`p-3 border-t border-zinc-200 space-y-1 ${sidebarCollapsed ? 'flex flex-col items-center p-2' : ''}`}>
           <button
-            onClick={() => setIsSettingsOpen(true)}
-            title={sidebarCollapsed ? "API Settings" : undefined}
-            className={`w-full flex items-center ${sidebarCollapsed ? 'justify-center p-2' : 'gap-3 px-3 py-2'} rounded-lg text-sm font-medium text-zinc-600 hover:bg-zinc-100 transition-colors cursor-pointer`}
+            onClick={() => setIsUserSettingsOpen(true)}
+            title={sidebarCollapsed ? "User Settings" : undefined}
+            className={`w-full flex items-center ${sidebarCollapsed ? 'justify-center p-2' : 'gap-3 px-3 py-2'} rounded-lg text-sm font-medium text-zinc-700 hover:bg-zinc-100 transition-colors cursor-pointer`}
           >
-            <Key className="w-4 h-4 shrink-0" />
-            {!sidebarCollapsed && <span>API Settings</span>}
+            <User className="w-4 h-4 shrink-0 text-blue-600" />
+            {!sidebarCollapsed && <span>User Settings</span>}
+          </button>
+
+          <button
+            onClick={() => setIsAdminPayPalModalOpen(true)}
+            title={sidebarCollapsed ? "App Owner Admin Settings" : undefined}
+            className={`w-full flex items-center ${sidebarCollapsed ? 'justify-center p-2' : 'gap-3 px-3 py-2'} rounded-lg text-sm font-medium text-indigo-900 bg-indigo-50/60 hover:bg-indigo-100/80 border border-indigo-200/60 transition-colors cursor-pointer`}
+          >
+            <SlidersHorizontal className="w-4 h-4 shrink-0 text-indigo-600" />
+            {!sidebarCollapsed && <span className="font-extrabold text-xs">App Owner Admin</span>}
           </button>
         </div>
       </aside>
@@ -4547,6 +4682,22 @@ export default function App() {
           </div>
 
           <div className="flex items-center gap-2">
+            {/* BYOK API Key Quick Button */}
+            <button
+              onClick={() => setIsUserSettingsOpen(true)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-xl transition-all shadow-2xs cursor-pointer ${
+                localStorage.getItem('user_custom_gemini_key') || localStorage.getItem('gemini_api_key')
+                  ? 'bg-blue-50 text-blue-800 border border-blue-200/80 hover:bg-blue-100'
+                  : 'bg-amber-500 text-white hover:bg-amber-600 animate-pulse'
+              }`}
+              title="Configure personal Google Gemini API key (BYOK)"
+            >
+              <Key className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">
+                {localStorage.getItem('user_custom_gemini_key') || localStorage.getItem('gemini_api_key') ? 'BYOK Key Active' : 'Set Gemini Key (BYOK)'}
+              </span>
+            </button>
+
             {/* Command Palette / Quick Tool Search */}
             <button
               onClick={() => setCommandPaletteOpen(true)}
@@ -4698,6 +4849,24 @@ export default function App() {
           </div>
         </header>
 
+        {!(localStorage.getItem('user_custom_gemini_key') || localStorage.getItem('gemini_api_key')) && (
+          <div className="bg-gradient-to-r from-amber-500 via-amber-600 to-orange-600 text-white px-4 py-2.5 text-xs font-bold flex items-center justify-between gap-3 shadow-sm border-b border-amber-600/30">
+            <div className="flex items-center gap-2">
+              <Sparkles className="w-4 h-4 text-amber-200 shrink-0" />
+              <span>
+                <strong>Bring Your Own Key (BYOK) Mode:</strong> Connect your personal Google Gemini API key to enable AI manuscript drafting, cover art, and outlining.
+              </span>
+            </div>
+            <button
+              onClick={() => setIsUserSettingsOpen(true)}
+              className="px-3.5 py-1 bg-white text-amber-950 font-extrabold rounded-lg text-xs hover:bg-amber-50 transition-all shadow-2xs shrink-0 cursor-pointer flex items-center gap-1"
+            >
+              <span>Configure Key Now</span>
+              <ChevronRight className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        )}
+
         {historyNotice && (
           <div className="fixed top-16 left-1/2 -translate-x-1/2 z-50 bg-zinc-900 text-white text-xs font-medium px-4 py-2 rounded-full shadow-xl flex items-center gap-2 border border-zinc-700">
             <RotateCcw className="w-3.5 h-3.5 text-indigo-400" />
@@ -4708,6 +4877,16 @@ export default function App() {
         <div className="flex-1 overflow-y-auto p-4 md:p-6 lg:p-8">
           <div className="max-w-4xl mx-auto">
             
+            {viewMode !== 'library' && (
+              <PipelineStepper
+                activeView={viewMode}
+                onNavigate={(v) => setViewMode(v)}
+                hasIdea={Boolean(idea || bookDetails.title)}
+                hasOutline={Boolean(outline)}
+                hasChapters={chapters.length > 0}
+              />
+            )}
+
             {viewMode === 'library' && (
               <div className="space-y-6">
                 <div className="flex items-center justify-between mb-8">
@@ -5309,14 +5488,11 @@ export default function App() {
                   if (chapter.status === 'generating') {
                     return (
                       <div className="flex flex-col items-center justify-center p-8 sm:p-12 min-h-[360px] bg-white rounded-2xl border border-zinc-200 shadow-sm text-center">
-                        <div className="relative mb-4">
-                          <Loader2 className="w-12 h-12 text-indigo-600 animate-spin" />
-                          <Sparkles className="w-5 h-5 text-purple-500 absolute -top-1 -right-1 animate-pulse" />
-                        </div>
-                        <h3 className="text-xl font-bold text-zinc-900">Writing Chapter with AI...</h3>
-                        <p className="text-xs sm:text-sm text-zinc-500 mt-1 max-w-md leading-relaxed">
-                          Gemini AI is generating deep manuscript content for <strong className="text-zinc-800">"{chapter.title}"</strong>.
-                        </p>
+                        <GenerationProgressLogger
+                          isGenerating={true}
+                          currentChapterTitle={chapter.title}
+                          generatingStep={generatingStep}
+                        />
 
                         <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
                           <button
@@ -5353,6 +5529,10 @@ export default function App() {
                         setActiveChapterId(chapter.id);
                         setViewMode('humanizer');
                       }}
+                      onShowVersionHistory={() => {
+                        setVersionHistoryChapterId(chapter.id);
+                        setShowVersionHistoryModal(true);
+                      }}
                       onDelete={() => setChapterToDelete(chapter)}
                       onUndo={handleUndo}
                       canUndo={historyIndex > 0}
@@ -5369,7 +5549,26 @@ export default function App() {
                 customApiKey={customApiKey}
                 language={bookDetails.language}
                 onUpdateChapterContent={(chId, newContent) => {
-                  setChapters(prev => prev.map(c => c.id === chId ? { ...c, content: newContent } : c));
+                  setChapters(prev => prev.map(c => {
+                    if (c.id !== chId) return c;
+                    const existingRevs = c.revisions || [
+                      {
+                        id: generateId(),
+                        timestamp: Date.now() - 60000,
+                        label: 'Initial AI Draft',
+                        content: c.content,
+                        wordCount: c.content.trim().split(/\s+/).filter(Boolean).length
+                      }
+                    ];
+                    const newRev: ChapterRevision = {
+                      id: generateId(),
+                      timestamp: Date.now(),
+                      label: 'Anti-AI Humanizer Pass',
+                      content: newContent,
+                      wordCount: newContent.trim().split(/\s+/).filter(Boolean).length
+                    };
+                    return { ...c, content: newContent, revisions: [...existingRevs, newRev] };
+                  }));
                   pushHistorySnapshot('Humanized chapter prose');
                 }}
                 onUpdateAllChaptersContent={(updatedList) => {
@@ -8317,6 +8516,39 @@ export default function App() {
         }}
       />
 
+      {/* Version History & Safety Net Modal */}
+      {(() => {
+        const targetChapterId = versionHistoryChapterId || activeChapterId;
+        const vChapter = chapters.find(c => c.id === targetChapterId);
+        if (!vChapter) return null;
+
+        const revisions: ChapterRevision[] = vChapter.revisions && vChapter.revisions.length > 0
+          ? vChapter.revisions
+          : [
+              {
+                id: 'rev-current',
+                timestamp: Date.now(),
+                label: 'Current Manuscript Draft',
+                content: vChapter.content,
+                wordCount: vChapter.content.trim().split(/\s+/).filter(Boolean).length
+              }
+            ];
+
+        return (
+          <VersionHistoryModal
+            isOpen={showVersionHistoryModal}
+            onClose={() => setShowVersionHistoryModal(false)}
+            chapterTitle={vChapter.title}
+            revisions={revisions}
+            currentContent={vChapter.content}
+            onRestoreRevision={(rev) => {
+              setChapters(prev => prev.map(c => c.id === vChapter.id ? { ...c, content: rev.content } : c));
+              pushHistorySnapshot(`Restored chapter revision: ${rev.label}`);
+            }}
+          />
+        );
+      })()}
+
       {/* Global AI Continuity & Learned Rules Memory Modal */}
       <ContinuityMemoryModal
         isOpen={showContinuityModal}
@@ -8358,6 +8590,62 @@ export default function App() {
             </button>
           </div>
         </div>
+      )}
+
+      {/* Multi-User SaaS Authentication Modal */}
+      <AuthModal
+        isOpen={isAuthModalOpen}
+        onClose={() => setIsAuthModalOpen(false)}
+        onSuccess={() => refreshLibrary()}
+      />
+
+      {/* PayPal SaaS Subscription Modal */}
+      <SubscriptionModal
+        isOpen={isSubscriptionModalOpen}
+        onClose={() => setIsSubscriptionModalOpen(false)}
+        userProfile={userProfile}
+        onPlanUpdated={(updated) => setUserProfile(updated)}
+      />
+
+      {/* User Account Settings Modal */}
+      <UserSettingsModal
+        isOpen={isUserSettingsOpen}
+        onClose={() => setIsUserSettingsOpen(false)}
+        userProfile={userProfile}
+        onProfileUpdated={(updated) => setUserProfile(updated)}
+        onOpenSubscriptions={() => setIsSubscriptionModalOpen(true)}
+      />
+
+      {/* App Owner SaaS Admin Settings Modal */}
+      <AdminPayPalSettingsModal
+        isOpen={isAdminPayPalModalOpen}
+        onClose={() => setIsAdminPayPalModalOpen(false)}
+      />
+
+      {/* AI Support Assistant Expert Modal */}
+      <SupportAiAssistantModal
+        isOpen={isSupportAssistantOpen}
+        onClose={() => setIsSupportAssistantOpen(false)}
+        userProfile={userProfile}
+        bookCount={savedProjects.length}
+      />
+
+      {/* Floating AI Support Assistant Launch Widget */}
+      {!isSupportAssistantOpen && (
+        <button
+          onClick={() => setIsSupportAssistantOpen(true)}
+          className="fixed bottom-5 right-5 z-40 p-3.5 bg-gradient-to-r from-blue-700 via-indigo-700 to-slate-900 text-white rounded-full shadow-2xl hover:scale-105 active:scale-95 transition-all flex items-center gap-2.5 border border-white/20 group cursor-pointer"
+          title="Open AI Support Assistant Expert"
+        >
+          <div className="relative">
+            <Bot className="w-5 h-5 text-blue-200 group-hover:rotate-12 transition-transform" />
+            <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-emerald-400 rounded-full border-2 border-zinc-900 animate-ping" />
+            <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-emerald-400 rounded-full border-2 border-zinc-900" />
+          </div>
+          <span className="text-xs font-extrabold pr-1 hidden sm:inline tracking-tight">
+            Need Help? Ask AI Expert
+          </span>
+        </button>
       )}
 
     </div>
