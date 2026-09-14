@@ -405,7 +405,14 @@ Return a JSON object conforming strictly to this schema:
   }
 }
 
-export async function generateOutline(idea: string, keywords: string[], apiKey?: string, systemPrompt?: string, category?: string) {
+export async function generateOutline(
+  idea: string, 
+  keywords: string[], 
+  apiKey?: string, 
+  systemPrompt?: string, 
+  category?: string,
+  subCategory?: string
+) {
   const ai = getAI(apiKey);
 
   const generate = async (modelName: string) => {
@@ -472,7 +479,58 @@ export async function generateOutline(idea: string, keywords: string[], apiKey?:
       MANDATORY CHARACTER NAMING & DIVERSITY RULES:
       - Every character introduced MUST have a distinct, delightful name tailored to children's storytelling.
       - Avoid overused generic tropes. Generate fresh, memorable, child-friendly names.`;
+    } else if (category === 'guides' || subCategory === 'how_to_manual' || subCategory === 'masterclass_handbook') {
+      systemRole = "You are an expert Instructional Designer, Systems Architect, and Master Technical Author. Deliver crystal-clear, step-by-step how-to guides, execution playbooks, and operational manuals with structured action checklists, troubleshooting matrices, and practical blueprints.";
+      architectureInstructions = `STRUCTURE A STEP-BY-STEP OPERATIONAL GUIDE / MASTERCLASS HANDBOOK OUTLINE:
+      - **Chapter Title & Operational Objective**: Concrete, outcome-focused title and exact technical/practical goal.
+      - **Prerequisites & Tool Stack**: Tools, accounts, hardware/software specifications, or prior knowledge required.
+      - **Core Framework & Procedural Phases**: 4-6 sequential, step-by-step phases with clear action verbs.
+      - **Action Checklists, Code/Configs & Diagrams**: Specific command-line instructions, code snippets, config files, or Mermaid workflow diagrams to incorporate.
+      - **Common Pitfalls & Troubleshooting Matrix**: Edge cases, failure modes, error codes, and exact corrective actions.
+      - **Verification Checkpoints & Next Steps**: How to test/validate success before moving forward.
+      
+      STRICT GUIDELINES FOR MANUALS & GUIDES:
+      - Focus 100% on clear, authoritative, practical, and reproducible procedures.
+      - DO NOT invent fictional characters, dramatized dialogue, or fictional storytelling scenes.`;
+    } else if (category === 'non_fiction') {
+      if (subCategory === 'business_leadership') {
+        systemRole = "You are a world-class Business Strategist, Management Consultant, and Thought Leadership Author. You design authoritative business frameworks, strategic playbooks, and organizational transformation blueprints.";
+        architectureInstructions = `STRUCTURE AN AUTHORITATIVE BUSINESS & THOUGHT LEADERSHIP CHAPTER OUTLINE:
+        - **Chapter Title & Strategic Thesis**: High-impact title and core strategic premise.
+        - **Proprietary Framework & Mental Model**: The strategic matrix, model, or methodology.
+        - **Core Operational Principles**: 4-6 deep analysis points on execution, leadership, or market dynamics.
+        - **Empirical Industry Case Studies & Data**: Real-world industry benchmarks, corporate precedents, and empirical lessons.
+        - **Executive Action Plan & Implementation Checklist**: Actionable steps, team KPIs, and governance milestones.
+        - **Key Strategic Takeaways**: Summary takeaways and executive decision frameworks.`;
+      } else if (subCategory === 'health_wellness') {
+        systemRole = "You are an authoritative Health, Wellness & Longevity Author and Medical Researcher. You design science-backed protocols, biological wellness frameworks, and sustainable health routines.";
+        architectureInstructions = `STRUCTURE A SCIENCE-BACKED HEALTH & WELLNESS CHAPTER OUTLINE:
+        - **Chapter Title & Core Protocol**: Impactful chapter title and key health objective.
+        - **Biological Mechanism & Science Foundation**: Clear explanation of bodily mechanisms and scientific research.
+        - **Actionable Daily Protocols & Habits**: 4-6 concrete routines, timing, dosage/exercise guidelines.
+        - **Safety Guidelines, Contraindications & Tracking**: Measurable biometric markers, warnings, and progress metrics.
+        - **Implementation Checklist & Lifestyle Integration**: Day-to-day routine checklist and habit triggers.`;
+      } else if (subCategory === 'biography_memoir') {
+        systemRole = "You are an acclaimed biographical ghostwriter and narrative non-fiction author. Synthesize emotional intimacy, authentic voice, historical or lived detail, and reflective wisdom.";
+        architectureInstructions = `STRUCTURE A NARRATIVE MEMOIR / BIOGRAPHICAL CHAPTER OUTLINE:
+        - **Chapter Title & Life Milestone**: Evocative title marking a key life chapter or turning point.
+        - **Core Emotional Arc & Setting**: Atmosphere, historical context, and lived emotional stakes.
+        - **Key Life Events & Relationships**: 4-6 sequential moments exploring challenges, choices, and turning points.
+        - **Character Perspectives & Dialogue**: Authentic interactions and character relationships.
+        - **Philosophical Reflection & Lived Insight**: Universal takeaway derived from personal truth.`;
+      } else {
+        systemRole = "You are an acclaimed Personal Development Author, Behavioral Strategist, and Thought Leader. You design actionable psychological frameworks, habit architectures, and transformative non-fiction outlines.";
+        architectureInstructions = `STRUCTURE AN ENGAGING SELF-HELP & PERSONAL GROWTH CHAPTER OUTLINE:
+        - **Chapter Title & Paradigm Shift**: Catchy title and core mindset/habit breakthrough.
+        - **The Psychological Mechanism**: Why traditional habits fail and the cognitive/behavioral mechanics.
+        - **Actionable Framework & Core Steps**: 4-6 structured concepts with practical applications.
+        - **Relatable Real-World Scenarios**: Grounded examples and situational applications.
+        - **Personal Reflection Prompts & Action Checklist**: Journaling exercises, habit audit, and daily action triggers.
+        - **Chapter Takeaways**: Summary mental models and core reminders.`;
+      }
     } else {
+      // Default: Fiction & Storytelling (Preserves 100% of the original rich fiction literary architecture)
+      systemRole = "You are a master Literary Architect, NYT Bestselling Editor, and Fiction Specialist. Synthesize deep structural outlines with rich narrative momentum, tropes, psychological depth, and reader engagement loops.";
       architectureInstructions = `STRUCTURE EACH CHAPTER WITH DEEP LITERARY ARCHITECTURE:
       - **Chapter Title & Subtitle**: High-impact, engaging title.
       - **Core Premise & Objectives**: Key narrative hook or thesis statement.
@@ -490,7 +548,7 @@ export async function generateOutline(idea: string, keywords: string[], apiKey?:
       model: modelName,
       contents: `You are an elite Literary Architect, Bestselling Ghostwriter, and Publishing Director.
       Create a masterclass, publication-grade outline for a project about: '${idea}'.
-      Category / Format: ${category ? category.replace('_', ' ').toUpperCase() : 'MANUSCRIPT'}.
+      Category / Format: ${category ? category.replace('_', ' ').toUpperCase() : 'MANUSCRIPT'}${subCategory ? ` (Subcategory: ${subCategory.replace('_', ' ')})` : ''}.
       Keywords & Core Themes: ${keywords.join(", ")}.
 
       ${architectureInstructions}`,
@@ -674,7 +732,8 @@ export async function generateChapter(
   systemPrompt?: string,
   signal?: AbortSignal,
   continuityContext?: ContinuityContext,
-  category?: string
+  category?: string,
+  subCategory?: string
 ) {
   const ai = getAI(apiKey);
   const topic = bookIdea && bookIdea.trim() !== '' ? bookIdea : 'the project topic';
@@ -703,9 +762,10 @@ export async function generateChapter(
     previousEndingBlock = `\n\nIMMEDIATELY PRECEDING SECTION CONCLUSION (BRIDGE SEAMLESSLY):\nHere are the final paragraphs of the preceding section. Open this new section with smooth bridge and momentum:\n"""\n${continuityContext.previousChapterEnding}\n"""\n`;
   }
 
-  // Format existing character names block
+  // Format existing character names block (only for fiction, children's stories, or memoirs)
+  const isCharacterDriven = category === 'fiction' || category === 'children_stories' || (category === 'non_fiction' && subCategory === 'biography_memoir');
   let existingCharactersBlock = '';
-  if (continuityContext?.existingCharacterNames && continuityContext.existingCharacterNames.length > 0) {
+  if (isCharacterDriven && continuityContext?.existingCharacterNames && continuityContext.existingCharacterNames.length > 0) {
     existingCharactersBlock = `\n\nESTABLISHED PROJECT CHARACTERS / CASE STUDY ENTITIES:\nThe following entities already exist in this manuscript project:\n` +
       continuityContext.existingCharacterNames.map(n => `- ${n}`).join('\n') +
       `\nCRITICAL NAMING LAWS:
@@ -745,7 +805,42 @@ export async function generateChapter(
 3. EMBEDDED ILLUSTRATION CUES: Include visual art cues in brackets throughout the scenes, e.g. \`[Illustration: Full-page spread showing Barnaby the curious badger peeking out from an oversized glowing mushroom canopy under starlight]\` to guide illustration layouts.
 4. EMOTIONAL WARMTH & HEARTFELT VALUES: Nurture empathy, curiosity, resilience, friendship, kindness, or courage without sounding preachy or condescending.
 5. WHOLESOME & SAFE: Strictly avoid adult violence, dark cynicism, vulgarity, or ungrounded fear.`;
+  } else if (category === 'guides' || subCategory === 'how_to_manual' || subCategory === 'masterclass_handbook') {
+    defaultSystemPersona = "You are an expert instructional designer, systems architect, and technical author. Deliver crystal-clear, step-by-step how-to guides, execution roadmaps, and operational manuals. Use structured action checklists, visual breakdowns, troubleshooting matrices, prerequisite warnings, and pro-tips to ensure readers achieve rapid, foolproof implementation.";
+    categorySpecificRequirements = `SPECIALIZED HOW-TO GUIDE & OPERATIONAL MANUAL CHAPTER REQUIREMENTS:
+1. STEP-BY-STEP OPERATIONAL CLARITY: Write a comprehensive, hands-on chapter (2,000 to 3,500 words). Thoroughly unpack every phase with numbered operational steps, prerequisite dependencies, environment configurations, and concrete instructions.
+2. TECHNICAL ARTIFACTS & WORKFLOWS: Include structured action checklists, code/terminal commands, configuration examples, and Mermaid.js diagrams or visual flowcharts wherever applicable.
+3. TROUBLESHOOTING & EDGE CASES: Detail explicit failure mode tables, common pitfalls, debugging tips, and verification checkpoints so readers can validate their progress.
+4. ZERO FICTIONAL MELODRAMA: Do NOT invent fictional characters, dramatized dialogue, or atmospheric storytelling scenes. Write directly to the practitioner in a clear, authoritative, highly usable instructional style.`;
+  } else if (category === 'non_fiction') {
+    if (subCategory === 'business_leadership') {
+      defaultSystemPersona = "You are an elite Business Strategy Consultant and Thought Leadership Author. Synthesize authoritative frameworks, empirical industry case studies, and actionable executive roadmaps.";
+      categorySpecificRequirements = `SPECIALIZED BUSINESS & THOUGHT LEADERSHIP CHAPTER REQUIREMENTS:
+1. STRATEGIC DEPTH & EXECUTIVE RIGOR: Write a full-length chapter (2,000 to 3,500 words). Unpack strategic frameworks, organizational mechanics, and actionable business models.
+2. REAL-WORLD CASE PRECEDENTS: Analyze empirical market case studies, benchmark data, and executive decision dilemmas (without inventing fictional melodrama).
+3. ACTIONABLE LEADERSHIP TAKEAWAYS: Include an Executive Action Plan, KPI checkpoints, and practical implementation frameworks.`;
+    } else if (subCategory === 'health_wellness') {
+      defaultSystemPersona = "You are an authoritative Health, Wellness & Longevity Author and Medical Researcher. Synthesize science-backed protocols, biological mechanisms, and practical lifestyle habits.";
+      categorySpecificRequirements = `SPECIALIZED HEALTH & WELLNESS CHAPTER REQUIREMENTS:
+1. SCIENCE-BACKED RIGOR & ACTIONABLE PROTOCOLS: Write a full-length chapter (2,000 to 3,500 words). Unpack physiological mechanisms, lifestyle protocols, and practical daily routines.
+2. EVIDENCE-BASED GUIDELINES: Provide clear safety warnings, dosage/habit tracking tables, and measurable wellness indicators.
+3. SUPPORTIVE & EMPOWERING TONE: Maintain an encouraging, evidence-based voice focused on sustainable long-term vitality.`;
+    } else if (subCategory === 'biography_memoir') {
+      defaultSystemPersona = "You are an acclaimed biographical ghostwriter and narrative non-fiction author. Synthesize emotional intimacy, authentic voice, historical or lived detail, and reflective wisdom.";
+      categorySpecificRequirements = `SPECIALIZED MEMOIR & NARRATIVE NON-FICTION CHAPTER REQUIREMENTS:
+1. LENGTH & EXPANSIVE DEPTH: Write a full-length chapter (2,000 to 3,500 words). Unpack lived experiences, turning points, and personal reflections with authentic voice, emotional vulnerability, and historical texture.
+2. AUTHENTIC CONTINUITY: Deepen character arcs and personal relationships while honoring truth and lived perspective.
+3. ELEGANT LITERARY LAYOUT: Use clean Markdown with compelling narrative pacing, reflective pauses, and scene transitions.`;
+    } else {
+      defaultSystemPersona = "You are a master Personal Development Author and Behavioral Strategist. Synthesize actionable psychological frameworks, habit architectures, and practical life transformation exercises.";
+      categorySpecificRequirements = `SPECIALIZED SELF-HELP & PERSONAL GROWTH CHAPTER REQUIREMENTS:
+1. PSYCHOLOGICAL DEPTH & ACTIONABLE FRAMEWORKS: Write a full-length chapter (2,000 to 3,500 words). Unpack behavioral psychology, mental models, and step-by-step personal transformation habits.
+2. PRACTICAL EXERCISES & REFLECTION PROMPTS: Include self-audit checklists, journal prompts, and daily habit tracking structures.
+3. INSPIRATIONAL YET GROUNDED CADENCE: Balance empathetic encouragement with direct accountability and concrete tools.`;
+    }
   } else {
+    // Default / Fiction: Preserves 100% of the original rich fiction storytelling capabilities
+    defaultSystemPersona = "You are a Pulitzer-worthy author and master ghostwriter. Synthesize authoritative depth, emotional intelligence, visceral narrative texture, and flawless human rhythm while rigorously adhering to all learned user corrections and manuscript continuity.";
     categorySpecificRequirements = `SPECIALIZED MANUSCRIPT CHAPTER REQUIREMENTS:
 1. LENGTH & EXPANSIVE DEPTH: Write a full-length chapter (2,000 to 3,500 words). Thoroughly unpack every sub-topic with vivid narrative detail, real-world case studies, psychological insights, dialogue, or step-by-step masterclass demonstrations.
 2. TOPIC ALIGNMENT: Directly explore and master the specific subject matter of "${chapterTitle}", keeping aligned with the overall manuscript concept '${topic}'.
@@ -757,12 +852,14 @@ export async function generateChapter(
       throw new Error('Generation cancelled by user');
     }
 
+    const isTechnicalDoc = category === 'guides' || category === 'white_paper' || (category === 'non_fiction' && subCategory !== 'biography_memoir');
+
     const generatePromise = ai.models.generateContent({
       model: modelName,
       contents: `You are an award-winning master author and content strategist writing a publication-grade section/chapter for a manuscript project.
       
       MANUSCRIPT TOPIC / CORE CONCEPT: '${topic}'
-      CATEGORY / FORMAT: ${category ? category.replace('_', ' ').toUpperCase() : 'MANUSCRIPT'}
+      CATEGORY / FORMAT: ${category ? category.replace('_', ' ').toUpperCase() : 'MANUSCRIPT'}${subCategory ? ` (Subcategory: ${subCategory.replace('_', ' ')})` : ''}
       
       FULL MANUSCRIPT OUTLINE FOR CONTEXT:
       ${outline}
@@ -781,7 +878,9 @@ export async function generateChapter(
       - AUTHENTIC HUMAN PROSE & DE-AI MANDATE:
          * ZERO AI BUZZWORDS OR FORMULAIC CRUTCHES: Strictly forbidden words include "delve", "paradigm shift", "seamlessly", "holistic", "ever-evolving", "landscape", "fostering", "synergy", "testament to", "tapestry", "beacon", "vital role", "pivotal", "underscore", "in conclusion", "in today's fast-paced world", "intricate web", "transformative journey".
          * MASTERFUL BURSTINESS & CADENCE: Alternate sentence lengths dynamically. Mix ultra-short punchy declarations with expansive descriptive observations.
-         * RICH SENSORY DETAIL & ACTIVE VERBS: Write with visceral clarity, emotional resonance, grounded metaphors, and natural authority.`,
+         * ${isTechnicalDoc
+             ? 'PRACTICAL CLARITY & FACTUAL PRECISION: Write with direct authority, clear actionable terminology, concrete examples/checklists, and zero fictional melodrama.'
+             : 'RICH SENSORY DETAIL & ACTIVE VERBS: Write with visceral clarity, emotional resonance, grounded metaphors, and natural authority.'}`,
       config: {
         thinkingConfig: { thinkingBudget: 2048 },
         systemInstruction: (systemPrompt ? `${systemPrompt}\n\n` : '') + defaultSystemPersona

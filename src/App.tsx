@@ -2257,7 +2257,9 @@ export default function App() {
       
       setGeneratingStep('Generating architectural outline...');
       const languagePrompt = bookDetails.language ? `\n\nCRITICAL: You MUST write the entire outline in ${bookDetails.language}. All titles and section bullet points MUST be in ${bookDetails.language}.` : '';
-      const out = await generateOutline(fullIdea, res.top_keywords || [], customApiKey, customPrompt + languagePrompt, category);
+      const globalInstructionsPrompt = bookDetails?.globalInstructions ? `\n\nADDITIONAL MANDATORY INSTRUCTIONS:\n${bookDetails.globalInstructions}` : '';
+      const effectiveSubCategory = bookDetails?.subCategory || (BOOK_SUBCATEGORIES[category] ? BOOK_SUBCATEGORIES[category][0]?.id : undefined);
+      const out = await generateOutline(fullIdea, res.top_keywords || [], customApiKey, customPrompt + languagePrompt + globalInstructionsPrompt, category, effectiveSubCategory);
       setOutline(out);
       
       setIdea(fullIdea);
@@ -2338,6 +2340,7 @@ export default function App() {
       };
 
       const effectiveTopic = (idea && idea.trim()) || (bookDetails?.title && bookDetails.title.trim()) || bookDetails?.description || 'the manuscript topic';
+      const effectiveSubCategory = bookDetails?.subCategory || (BOOK_SUBCATEGORIES[category] ? BOOK_SUBCATEGORIES[category][0]?.id : undefined);
       const content = await generateChapter(
         effectiveTopic, 
         outline, 
@@ -2346,7 +2349,8 @@ export default function App() {
         combinedPrompt, 
         abortController.signal, 
         continuityCtx, 
-        category
+        category,
+        effectiveSubCategory
       );
 
       if (abortController.signal.aborted) {
