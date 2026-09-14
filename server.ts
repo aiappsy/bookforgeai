@@ -13,12 +13,24 @@ async function startServer() {
   const app = express();
   const PORT = 3000;
 
-  app.use(express.json());
+  app.use(express.json({ limit: "50mb" }));
+  app.use(express.urlencoded({ limit: "50mb", extended: true }));
 
-  // Gemini API Proxy to forward client/BYOK requests smoothly
+  // Gemini API Proxy to forward client/BYOK requests smoothly & strip platform query parameters
   app.use("/gemini-api-proxy", async (req, res) => {
     try {
-      const targetUrl = `https://generativelanguage.googleapis.com${req.url}`;
+      const rawUrl = new URL(req.url, "https://generativelanguage.googleapis.com");
+      
+      // Clean query parameters injected by platform proxy wrappers
+      const keysToDelete: string[] = [];
+      rawUrl.searchParams.forEach((_, key) => {
+        if (key.includes("applet_proxy") || key.startsWith("_applet")) {
+          keysToDelete.push(key);
+        }
+      });
+      keysToDelete.forEach((k) => rawUrl.searchParams.delete(k));
+
+      const targetUrl = rawUrl.toString();
       const headers: Record<string, string> = {
         "Content-Type": req.headers["content-type"] || "application/json",
       };
@@ -119,7 +131,7 @@ Current User Context: User Email: ${userContext?.email || 'Guest'}, Plan: ${user
       }
 
       const response = await ai.models.generateContent({
-        model: "gemini-3.6-flash",
+        model: "gemini-3.7-flash",
         contents: formattedContents,
         config: {
           systemInstruction,
@@ -164,7 +176,7 @@ Current User Context: User Email: ${userContext?.email || 'Guest'}, Plan: ${user
       clientSecret: process.env.PAYPAL_CLIENT_SECRET || "",
       mode: (process.env.PAYPAL_MODE as "sandbox" | "live") || "sandbox"
     },
-    ownerPasscode: "admin123", // Default admin security passcode
+    ownerPasscode: process.env.ADMIN_PASSCODE || "admin123", // Default admin security passcode
     currency: "USD",
     currencySymbol: "$",
     tiers: {
@@ -242,8 +254,46 @@ Current User Context: User Email: ${userContext?.email || 'Guest'}, Plan: ${user
     });
   });
 
-  // App Owner Admin Settings Endpoint
+  // Helper function to check admin passcode authorization
+  const isAuthorizedAdmin = (req: express.Request): boolean => {
+    const headerPasscode = req.headers["x-admin-passcode"];
+    const bodyPasscode = req.body?.passcode;
+    const queryPasscode = req.query?.passcode;
+    const passcode = headerPasscode || bodyPasscode || queryPasscode;
+    return Boolean(passcode && passcode === appOwnerConfig.ownerPasscode);
+  };
+
+  // Verify Admin Security Passcode Endpoint
+  app.post("/api/admin/verify-passcode", (req, res) => {
+    const { passcode } = req.body;
+    if (passcode && passcode === appOwnerConfig.ownerPasscode) {
+      return res.json({ authenticated: true, message: "Admin access granted" });
+    }
+    return res.status(401).json({ authenticated: false, error: "Invalid Admin Passcode" });
+  });
+
+  // Change Admin Security Passcode Endpoint
+  app.post("/api/admin/change-passcode", (req, res) => {
+    if (!isAuthorizedAdmin(req)) {
+      return res.status(401).json({ error: "Unauthorized: Invalid or missing Admin Passcode" });
+    }
+    const { currentPasscode, newPasscode } = req.body;
+    if (!currentPasscode || currentPasscode !== appOwnerConfig.ownerPasscode) {
+      return res.status(400).json({ error: "Current admin passcode is incorrect" });
+    }
+    if (!newPasscode || newPasscode.trim().length < 4) {
+      return res.status(400).json({ error: "New passcode must be at least 4 characters long" });
+    }
+    appOwnerConfig.ownerPasscode = newPasscode.trim();
+    console.log("[Owner Admin] Admin security passcode updated");
+    return res.json({ success: true, message: "Admin Security Passcode updated successfully" });
+  });
+
+  // App Owner Admin Settings Endpoint (SECURED)
   app.get("/api/paypal/admin-settings", (req, res) => {
+    if (!isAuthorizedAdmin(req)) {
+      return res.status(401).json({ error: "Unauthorized: Invalid or missing Admin Passcode" });
+    }
     res.json({
       clientId: appOwnerConfig.paypal.clientId,
       hasSecret: Boolean(appOwnerConfig.paypal.clientSecret),
@@ -257,8 +307,11 @@ Current User Context: User Email: ${userContext?.email || 'Guest'}, Plan: ${user
     });
   });
 
-  // Save App Owner Admin Settings Endpoint
+  // Save App Owner Admin Settings Endpoint (SECURED)
   app.post("/api/paypal/admin-settings", (req, res) => {
+    if (!isAuthorizedAdmin(req)) {
+      return res.status(401).json({ error: "Unauthorized: Invalid or missing Admin Passcode" });
+    }
     const {
       clientId,
       clientSecret,
@@ -312,6 +365,13 @@ Current User Context: User Email: ${userContext?.email || 'Guest'}, Plan: ${user
   });
 
   app.post("/api/paypal/test-connection", async (req, res) => {
+    if (!isAuthorizedAdmin(req)) {
+      return res.status(401).json({
+        success: false,
+        error: "Unauthorized: Invalid or missing Admin Passcode"
+      });
+    }
+
     const clientId = appOwnerConfig.paypal.clientId;
     const clientSecret = appOwnerConfig.paypal.clientSecret;
     const paypalMode = appOwnerConfig.paypal.mode;

@@ -30,7 +30,10 @@ export function HumanizerStudio({
     activeChapterId || (chapters.length > 0 ? chapters[0].id : '')
   );
   const [scope, setScope] = useState<'single' | 'all'>('single');
-  const [mode, setMode] = useState<'bypass' | 'natural' | 'authorial'>('bypass');
+  const [mode, setMode] = useState<'bypass' | 'natural' | 'authorial'>('natural');
+  const [intensity, setIntensity] = useState<'light' | 'moderate' | 'deep'>('moderate');
+  const [genre, setGenre] = useState<'narrative' | 'business' | 'memoir' | 'academic' | 'general' | 'sales_copy' | 'white_paper' | 'web_copy' | 'children_stories'>('general');
+  const [lastAppliedMode, setLastAppliedMode] = useState<'bypass' | 'natural' | 'authorial' | null>(null);
   const [autoApply, setAutoApply] = useState<boolean>(true);
   const [isHumanizing, setIsHumanizing] = useState(false);
   const [humanizeProgress, setHumanizeProgress] = useState<string>('');
@@ -72,11 +75,14 @@ export function HumanizerStudio({
     setHumanizedResult(null);
     setJustAppliedNotice(false);
 
+    const modeLabel = mode === 'natural' ? 'Natural Flow' : mode === 'authorial' ? 'Authorial Polish' : 'AI Detector Bypass';
+
     try {
       if (scope === 'single' && selectedChapter) {
-        setHumanizeProgress(`Humanizing "${selectedChapter.title}" with Gemini AI...`);
-        const res = await humanizeManuscript(selectedChapter.content, mode, customApiKey, language);
+        setHumanizeProgress(`Applying ${modeLabel} (${intensity} edit, ${genre} focus)...`);
+        const res = await humanizeManuscript(selectedChapter.content, mode, customApiKey, language, intensity, genre);
         setHumanizedResult(res);
+        setLastAppliedMode(mode);
 
         if (autoApply) {
           onUpdateChapterContent(selectedChapter.id, res);
@@ -90,13 +96,14 @@ export function HumanizerStudio({
 
         for (let i = 0; i < doneChapters.length; i++) {
           const ch = doneChapters[i];
-          setHumanizeProgress(`Humanizing Chapter ${i + 1} of ${doneChapters.length}: "${ch.title}"...`);
+          setHumanizeProgress(`Applying ${modeLabel} (Chapter ${i + 1}/${doneChapters.length}: "${ch.title}")...`);
           
           try {
-            const res = await humanizeManuscript(ch.content, mode, customApiKey, language);
+            const res = await humanizeManuscript(ch.content, mode, customApiKey, language, intensity, genre);
             results.push({ id: ch.id, content: res });
             combined += `# ${ch.title}\n\n${res}\n\n`;
             setHumanizedResult(combined);
+            setLastAppliedMode(mode);
           } catch (err: any) {
             console.error(`Rate limit or error on chapter ${i + 1}:`, err);
             if (err.message?.includes('429') || err.message?.includes('RESOURCE_EXHAUSTED')) {
@@ -248,61 +255,151 @@ export function HumanizerStudio({
             </div>
 
             {/* Humanization Mode Selection */}
-            <div className="space-y-2 pt-2 border-t border-zinc-100">
-              <label className="text-xs font-bold text-zinc-700 uppercase tracking-wider block">
-                2. Humanization Strategy & Voice Tone
+            <div className="space-y-3 pt-2 border-t border-zinc-100">
+              <label className="text-xs font-bold text-zinc-700 uppercase tracking-wider block flex items-center justify-between">
+                <span>2. Transformation Strategy & Editorial Objective</span>
+                <span className="text-[11px] font-semibold text-zinc-500 normal-case">
+                  Strategy: <strong className="text-zinc-900">{mode === 'natural' ? 'Natural Flow' : mode === 'authorial' ? 'Authorial Polish' : 'Bypass AI Detectors'}</strong>
+                </span>
               </label>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <button
-                  onClick={() => setMode('bypass')}
-                  className={`p-3.5 rounded-xl border text-left transition-all cursor-pointer relative ${
-                    mode === 'bypass'
-                      ? 'bg-emerald-50 border-emerald-400 text-emerald-950 ring-2 ring-emerald-500/20'
-                      : 'bg-white border-zinc-200 hover:bg-zinc-50 text-zinc-700'
-                  }`}
-                >
-                  <div className="flex items-center gap-2 mb-1 font-bold text-xs text-emerald-950">
-                    <Zap className="w-4 h-4 text-emerald-600" />
-                    <span>Bypass AI Detectors</span>
-                  </div>
-                  <p className="text-[11px] text-zinc-500 leading-snug">
-                    Max sentence burstiness, zero clichés, highly varied cadence.
-                  </p>
-                </button>
-
-                <button
+                  type="button"
                   onClick={() => setMode('natural')}
                   className={`p-3.5 rounded-xl border text-left transition-all cursor-pointer relative ${
                     mode === 'natural'
-                      ? 'bg-indigo-50 border-indigo-400 text-indigo-950 ring-2 ring-indigo-500/20'
+                      ? 'bg-indigo-50 border-indigo-400 text-indigo-950 ring-2 ring-indigo-500/20 shadow-xs'
                       : 'bg-white border-zinc-200 hover:bg-zinc-50 text-zinc-700'
                   }`}
                 >
+                  {mode === 'natural' && (
+                    <span className="absolute top-2 right-2 px-1.5 py-0.5 bg-indigo-600 text-white text-[9px] font-extrabold uppercase rounded-full">
+                      Active
+                    </span>
+                  )}
                   <div className="flex items-center gap-2 mb-1 font-bold text-xs text-indigo-950">
                     <Wand2 className="w-4 h-4 text-indigo-600" />
                     <span>Natural Flow</span>
                   </div>
-                  <p className="text-[11px] text-zinc-500 leading-snug">
-                    Direct, conversational human voice, active verbs, zero corporate AI-speak.
+                  <p className="text-[11px] text-zinc-600 leading-snug">
+                    Direct, conversational human narrative, active verbs, smooth storytelling cadence.
                   </p>
                 </button>
 
                 <button
+                  type="button"
                   onClick={() => setMode('authorial')}
                   className={`p-3.5 rounded-xl border text-left transition-all cursor-pointer relative ${
                     mode === 'authorial'
-                      ? 'bg-purple-50 border-purple-400 text-purple-950 ring-2 ring-purple-500/20'
+                      ? 'bg-purple-50 border-purple-400 text-purple-950 ring-2 ring-purple-500/20 shadow-xs'
                       : 'bg-white border-zinc-200 hover:bg-zinc-50 text-zinc-700'
                   }`}
                 >
+                  {mode === 'authorial' && (
+                    <span className="absolute top-2 right-2 px-1.5 py-0.5 bg-purple-600 text-white text-[9px] font-extrabold uppercase rounded-full">
+                      Active
+                    </span>
+                  )}
                   <div className="flex items-center gap-2 mb-1 font-bold text-xs text-purple-950">
                     <Sparkles className="w-4 h-4 text-purple-600" />
                     <span>Authorial Polish</span>
                   </div>
-                  <p className="text-[11px] text-zinc-500 leading-snug">
-                    Publication-grade literary prose, emotional depth, vivid narrative rhythm.
+                  <p className="text-[11px] text-zinc-600 leading-snug">
+                    Bestseller publication-grade prose, sensory depth, vivid vocabulary, literary rhythm.
                   </p>
                 </button>
+
+                <button
+                  type="button"
+                  onClick={() => setMode('bypass')}
+                  className={`p-3.5 rounded-xl border text-left transition-all cursor-pointer relative ${
+                    mode === 'bypass'
+                      ? 'bg-emerald-50 border-emerald-400 text-emerald-950 ring-2 ring-emerald-500/20 shadow-xs'
+                      : 'bg-white border-zinc-200 hover:bg-zinc-50 text-zinc-700'
+                  }`}
+                >
+                  {mode === 'bypass' && (
+                    <span className="absolute top-2 right-2 px-1.5 py-0.5 bg-emerald-600 text-white text-[9px] font-extrabold uppercase rounded-full">
+                      Active
+                    </span>
+                  )}
+                  <div className="flex items-center gap-2 mb-1 font-bold text-xs text-emerald-950">
+                    <Zap className="w-4 h-4 text-emerald-600" />
+                    <span>Bypass AI Detectors</span>
+                  </div>
+                  <p className="text-[11px] text-zinc-600 leading-snug">
+                    Maximum sentence length burstiness & perplexity to pass Turnitin / GPTZero.
+                  </p>
+                </button>
+              </div>
+
+              {/* Advanced Transformation Fine-Tuning */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-3 border-t border-zinc-100">
+                {/* Transformation Intensity */}
+                <div className="space-y-1.5">
+                  <label className="text-[11px] font-bold text-zinc-700 uppercase tracking-wider block">
+                    3. Editing Intensity Level
+                  </label>
+                  <div className="grid grid-cols-3 gap-1.5 bg-zinc-100 p-1 rounded-xl">
+                    <button
+                      type="button"
+                      onClick={() => setIntensity('light')}
+                      className={`py-1.5 px-2 rounded-lg text-[11px] font-bold transition-all text-center cursor-pointer ${
+                        intensity === 'light' ? 'bg-white text-zinc-900 shadow-xs' : 'text-zinc-600 hover:text-zinc-900'
+                      }`}
+                    >
+                      Precision (Light)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setIntensity('moderate')}
+                      className={`py-1.5 px-2 rounded-lg text-[11px] font-bold transition-all text-center cursor-pointer ${
+                        intensity === 'moderate' ? 'bg-white text-zinc-900 shadow-xs' : 'text-zinc-600 hover:text-zinc-900'
+                      }`}
+                    >
+                      Balanced Refresh
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setIntensity('deep')}
+                      className={`py-1.5 px-2 rounded-lg text-[11px] font-bold transition-all text-center cursor-pointer ${
+                        intensity === 'deep' ? 'bg-white text-zinc-900 shadow-xs' : 'text-zinc-600 hover:text-zinc-900'
+                      }`}
+                    >
+                      Deep Overhaul
+                    </button>
+                  </div>
+                  <p className="text-[10px] text-zinc-500">
+                    {intensity === 'light' && 'Fixes awkward phrasing & passive voice while keeping 85%+ of original sentence structure.'}
+                    {intensity === 'moderate' && 'Rephrases robotic sentences into engaging, fluid prose with strong natural rhythm.'}
+                    {intensity === 'deep' && 'Complete prose overhaul, transforming monotone paragraphs into captivating narrative.'}
+                  </p>
+                </div>
+
+                {/* Genre Focus */}
+                <div className="space-y-1.5">
+                  <label className="text-[11px] font-bold text-zinc-700 uppercase tracking-wider block">
+                    4. Manuscript Genre Context
+                  </label>
+                  <select
+                    value={genre}
+                    onChange={(e: any) => setGenre(e.target.value)}
+                    className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-3 py-1.5 text-xs font-semibold text-zinc-800 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  >
+                    <option value="general">General Trade & Non-Fiction</option>
+                    <option value="narrative">Fiction & Creative Storytelling</option>
+                    <option value="children_stories">Children's Stories & Picture Books</option>
+                    <option value="business">Thought Leadership & Business</option>
+                    <option value="sales_copy">Sales Copy & Direct Response</option>
+                    <option value="white_paper">White Paper & Industry Report</option>
+                    <option value="web_copy">Web Copy & Landing Pages</option>
+                    <option value="memoir">Memoir & Personal Experience</option>
+                    <option value="academic">Academic & Analytical</option>
+                  </select>
+                  <p className="text-[10px] text-zinc-500">
+                    Aligns sentence vocabulary, pacing, and tone with your specific manuscript genre.
+                  </p>
+                </div>
               </div>
             </div>
 
@@ -319,32 +416,56 @@ export function HumanizerStudio({
               </label>
             </div>
 
-            {/* Run Action Button */}
+            {/* Run Action Button - Dynamically styled by mode */}
             <button
               onClick={handleRunHumanize}
               disabled={isHumanizing || !sourceTextToAnalyze.trim()}
-              className="w-full py-3.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold text-sm shadow-md transition-all flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer"
+              className={`w-full py-3.5 rounded-xl font-bold text-sm shadow-md transition-all flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer ${
+                mode === 'natural'
+                  ? 'bg-indigo-600 hover:bg-indigo-500 text-white'
+                  : mode === 'authorial'
+                  ? 'bg-purple-600 hover:bg-purple-500 text-white'
+                  : 'bg-emerald-600 hover:bg-emerald-500 text-white'
+              }`}
             >
               {isHumanizing ? (
                 <>
                   <Loader2 className="w-4 h-4 animate-spin" />
-                  <span>{humanizeProgress || 'Humanizing Manuscript...'}</span>
+                  <span>{humanizeProgress || 'Transforming Manuscript Prose...'}</span>
                 </>
               ) : (
                 <>
-                  <ShieldAlert className="w-4 h-4" />
-                  <span>Humanize & Remove AI Markers ({scope === 'single' ? 'Selected Chapter' : 'All Chapters'})</span>
+                  {mode === 'natural' && <Wand2 className="w-4 h-4" />}
+                  {mode === 'authorial' && <Sparkles className="w-4 h-4" />}
+                  {mode === 'bypass' && <ShieldAlert className="w-4 h-4" />}
+                  <span>
+                    {mode === 'natural' && `Apply Natural Flow & Conversational Voice (${scope === 'single' ? 'Selected Chapter' : 'All Chapters'})`}
+                    {mode === 'authorial' && `Apply Authorial Polish & Literary Voice (${scope === 'single' ? 'Selected Chapter' : 'All Chapters'})`}
+                    {mode === 'bypass' && `Bypass AI Detectors & Remove Markers (${scope === 'single' ? 'Selected Chapter' : 'All Chapters'})`}
+                  </span>
                 </>
               )}
             </button>
 
             {justAppliedNotice && (
-              <div className="p-3 bg-emerald-50 border border-emerald-300 rounded-xl text-xs font-bold text-emerald-900 flex items-center justify-between animate-fade-in">
+              <div className={`p-3 rounded-xl text-xs font-bold border flex items-center justify-between animate-fade-in ${
+                lastAppliedMode === 'natural'
+                  ? 'bg-indigo-50 border-indigo-300 text-indigo-900'
+                  : lastAppliedMode === 'authorial'
+                  ? 'bg-purple-50 border-purple-300 text-purple-900'
+                  : 'bg-emerald-50 border-emerald-300 text-emerald-900'
+              }`}>
                 <div className="flex items-center gap-2">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                  <span>Humanized prose applied directly to manuscript workspace!</span>
+                  <CheckCircle2 className={`w-4 h-4 ${
+                    lastAppliedMode === 'natural' ? 'text-indigo-600' : lastAppliedMode === 'authorial' ? 'text-purple-600' : 'text-emerald-600'
+                  }`} />
+                  <span>
+                    {lastAppliedMode === 'natural' ? 'Natural Flow conversational prose' : lastAppliedMode === 'authorial' ? 'Authorial Polish literary prose' : 'Humanized prose'} applied directly to manuscript workspace!
+                  </span>
                 </div>
-                <span className="text-[10px] text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full font-mono">
+                <span className={`text-[10px] px-2 py-0.5 rounded-full font-mono font-bold ${
+                  lastAppliedMode === 'natural' ? 'bg-indigo-100 text-indigo-800' : lastAppliedMode === 'authorial' ? 'bg-purple-100 text-purple-800' : 'bg-emerald-100 text-emerald-800'
+                }`}>
                   {resultAiReport ? `${resultAiReport.aiProbability}% AI Score` : 'Updated'}
                 </span>
               </div>
@@ -460,6 +581,36 @@ export function HumanizerStudio({
               </div>
             ) : (
               <div className="space-y-4">
+                {/* Applied Strategy Impact Card */}
+                <div className={`p-3.5 rounded-xl border space-y-1.5 ${
+                  (lastAppliedMode || mode) === 'natural'
+                    ? 'bg-indigo-50/80 border-indigo-200 text-indigo-950'
+                    : (lastAppliedMode || mode) === 'authorial'
+                    ? 'bg-purple-50/80 border-purple-200 text-purple-950'
+                    : 'bg-emerald-50/80 border-emerald-200 text-emerald-950'
+                }`}>
+                  <div className="flex items-center justify-between text-xs font-bold">
+                    <div className="flex items-center gap-2">
+                      {(lastAppliedMode || mode) === 'natural' && <Wand2 className="w-4 h-4 text-indigo-600" />}
+                      {(lastAppliedMode || mode) === 'authorial' && <Sparkles className="w-4 h-4 text-purple-600" />}
+                      {(lastAppliedMode || mode) === 'bypass' && <Zap className="w-4 h-4 text-emerald-600" />}
+                      <span>
+                        {(lastAppliedMode || mode) === 'natural' && 'Natural Flow Strategy Applied'}
+                        {(lastAppliedMode || mode) === 'authorial' && 'Authorial Polish Strategy Applied'}
+                        {(lastAppliedMode || mode) === 'bypass' && 'AI Detector Bypass Strategy Applied'}
+                      </span>
+                    </div>
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-white/80 uppercase tracking-wider">
+                      {intensity} edit • {genre}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-zinc-600 leading-relaxed font-medium">
+                    {(lastAppliedMode || mode) === 'natural' && 'Transformed manuscript into direct, engaging human narrative with active verbs, conversational rhythm, and zero corporate transitions.'}
+                    {(lastAppliedMode || mode) === 'authorial' && 'Polished draft into publication-grade literary narrative with elevated prose elegance, sensory imagery, and rich authorial authority.'}
+                    {(lastAppliedMode || mode) === 'bypass' && 'Maximized sentence length burstiness and eliminated AI buzzwords for AI detector resistance.'}
+                  </p>
+                </div>
+
                 {/* Score Comparison Summary */}
                 {resultAiReport && (
                   <div className="p-3.5 bg-emerald-50 border border-emerald-200 rounded-xl space-y-2">

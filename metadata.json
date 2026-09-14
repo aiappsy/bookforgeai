@@ -1,6 +1,6 @@
 {
   "name": "manus (byaiappsy)",
-  "description": "Multi-user BYOK manuscript generator with custom categories, PayPal subscriptions, and AI Support Assistant",
+  "description": "AI Manuscript Studio & Book Publishing Platform — Full-length book generator, Anti-AI humanizer, Amazon KDP research, cover design, and EPUB/PDF publishing.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

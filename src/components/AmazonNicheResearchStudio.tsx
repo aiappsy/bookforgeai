@@ -348,13 +348,13 @@ ${result.recommended_categories?.map(c => `- ${c.category_path} (Avg BSR #${c.bs
                       verdict: result.actionable_verdict,
                       contentGaps: result.content_gaps_and_opportunities.map(g => `${g.angle_title}: ${g.reader_complaint_addressed} -> ${g.suggested_feature}`)
                     });
-                    setAppliedNotice("🚀 Bootstrapping new book project from Niche Analytics...");
+                    setAppliedNotice("🚀 Bootstrapping new manuscript project from Niche Analytics...");
                     setTimeout(() => setAppliedNotice(null), 3000);
                   }}
                   className="bg-amber-600 hover:bg-amber-700 text-white font-extrabold text-xs px-4 py-3 rounded-xl transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer hover:scale-[1.02] active:scale-[0.98]"
                 >
                   <Sparkles className="w-4 h-4 text-amber-200 animate-pulse" />
-                  <span>Start Book Project from this Niche</span>
+                  <span>Start Manuscript Project from this Niche</span>
                   <ArrowRight className="w-4 h-4" />
                 </button>
               )}

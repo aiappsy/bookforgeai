@@ -67,6 +67,19 @@ service cloud.firestore {
 
     // --- Rules ---
 
+    match /users/{userId} {
+      allow get: if isAuthenticated() && isValidId(userId) && (request.auth.uid == userId || exists(/databases/$(database)/documents/admins/$(request.auth.uid)));
+      allow list: if false;
+      allow create, update: if isAuthenticated() && isValidId(userId) && request.auth.uid == userId;
+      allow delete: if false;
+    }
+
+    match /admins/{adminId} {
+      allow get: if isAuthenticated() && isValidId(adminId) && request.auth.uid == adminId;
+      allow list: if false;
+      allow create, update, delete: if false; // Admin collection read-only for client, managed server-side
+    }
+
     match /users/{userId}/settings/{settingId} {
       allow get: if isAuthenticated() && isValidId(userId) && isOwner(userId);
       allow list: if false; // Should only perform target lookups

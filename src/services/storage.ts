@@ -15,9 +15,36 @@ export interface ProjectSave {
   assets: any;
   chats: any;
   continuityMemory?: any;
+  characterBible?: any;
+  chapterIllustrations?: any;
+}
+
+export interface TrashItem {
+  id: string;
+  title: string;
+  deletedAt: number;
+  updatedAt: number;
+  category: string;
+  chapterCount: number;
+  wordCount: number;
+  idea?: string;
+  data: ProjectSave;
 }
 
 let isFirestoreQuotaExceeded = false;
+
+// Helper to test if a project contains meaningful user content (avoids creating ghost blank drafts)
+export const hasProjectContent = (proj: any): boolean => {
+  if (!proj) return false;
+  const title = (proj.title || proj.bookDetails?.title || '').trim();
+  const idea = (proj.idea || proj.item_idea || '').trim();
+  const outline = (proj.outline || '').trim();
+  const chapters = Array.isArray(proj.chapters) ? proj.chapters : [];
+  const hasChaptersWithContent = chapters.some((c: any) => c && c.content && c.content.trim().length > 0);
+  const isCustomTitle = Boolean(title && title !== 'Untitled Project' && title !== 'Untitled Book' && title !== 'Untitled Manuscript');
+  
+  return Boolean(isCustomTitle || idea.length > 0 || outline.length > 0 || chapters.length > 0 || proj.research || proj.assets?.coverUrl || (proj.characterBible && proj.characterBible.length > 0));
+};
 
 // Helper to update local storage index of projects
 const updateLocalStorageIndex = (proj: { id: string; title: string; updatedAt: number; category?: string; idea?: string }) => {
@@ -43,13 +70,161 @@ const updateLocalStorageIndex = (proj: { id: string; title: string; updatedAt: n
   }
 };
 
+// Helper to get trash set IDs
+const getTrashSet = (): Set<string> => {
+  const set = new Set<string>();
+  try {
+    const raw = localStorage.getItem('kdp_trash_bin');
+    if (raw) {
+      const list = JSON.parse(raw);
+      if (Array.isArray(list)) {
+        list.forEach(item => { if (item && item.id) set.add(item.id); });
+      }
+    }
+  } catch (e) {}
+  return set;
+};
+
+export const getTrashList = async (): Promise<TrashItem[]> => {
+  let list: TrashItem[] = [];
+  try {
+    const raw = localStorage.getItem('kdp_trash_bin');
+    if (raw) list = JSON.parse(raw);
+  } catch (e) {
+    console.warn("Error reading trash list:", e);
+  }
+  return Array.isArray(list) ? list.sort((a, b) => (b.deletedAt || 0) - (a.deletedAt || 0)) : [];
+};
+
+export const moveToTrash = async (id: string): Promise<TrashItem | null> => {
+  try {
+    let projData: ProjectSave | null = null;
+    const raw = localStorage.getItem(`kdp_project_${id}`);
+    if (raw) {
+      try { projData = JSON.parse(raw); } catch (e) {}
+    }
+    
+    if (!projData) {
+      projData = await loadProject(id);
+    }
+
+    if (!projData) return null;
+
+    const chaps = Array.isArray(projData.chapters) ? projData.chapters : [];
+    let wordCount = 0;
+    chaps.forEach((c: any) => {
+      if (c?.content) wordCount += c.content.trim().split(/\s+/).filter(Boolean).length;
+    });
+
+    const trashItem: TrashItem = {
+      id: projData.id,
+      title: projData.title || projData.bookDetails?.title || 'Untitled Manuscript',
+      deletedAt: Date.now(),
+      updatedAt: projData.updatedAt || Date.now(),
+      category: projData.category || 'non_fiction',
+      chapterCount: chaps.length,
+      wordCount,
+      idea: projData.idea || '',
+      data: projData
+    };
+
+    // 1. Add to Trash Bin
+    const trashList = await getTrashList();
+    const filteredTrash = trashList.filter(t => t.id !== id);
+    filteredTrash.unshift(trashItem);
+    localStorage.setItem('kdp_trash_bin', JSON.stringify(filteredTrash.slice(0, 100)));
+
+    // 2. Remove from active projects index & local storage
+    localStorage.removeItem(`kdp_project_${id}`);
+    const indexRaw = localStorage.getItem('kdp_projects_index');
+    if (indexRaw) {
+      const idxList = JSON.parse(indexRaw);
+      const updatedIdx = idxList.filter((p: any) => p.id !== id);
+      localStorage.setItem('kdp_projects_index', JSON.stringify(updatedIdx));
+    }
+
+    // 3. Mark in Firestore or delete doc if applicable
+    if (!isFirestoreQuotaExceeded && auth.currentUser) {
+      try {
+        await deleteDoc(doc(db, 'projects', id));
+      } catch (e: any) {
+        if (e?.code === 'resource-exhausted' || e?.message?.includes('Quota limit exceeded')) {
+          isFirestoreQuotaExceeded = true;
+        }
+      }
+    }
+
+    return trashItem;
+  } catch (e) {
+    console.error("Error moving project to trash:", e);
+    return null;
+  }
+};
+
+export const restoreFromTrash = async (id: string): Promise<ProjectSave | null> => {
+  try {
+    const trashList = await getTrashList();
+    const item = trashList.find(t => t.id === id);
+    if (!item || !item.data) return null;
+
+    const restoredProject = item.data;
+    restoredProject.updatedAt = Date.now();
+
+    // 1. Remove from Trash Bin
+    const remainingTrash = trashList.filter(t => t.id !== id);
+    localStorage.setItem('kdp_trash_bin', JSON.stringify(remainingTrash));
+
+    // 2. Save back to active LocalStorage & Firestore
+    await saveProject(restoredProject);
+
+    return restoredProject;
+  } catch (e) {
+    console.error("Error restoring project from trash:", e);
+    return null;
+  }
+};
+
+export const permanentlyDeleteFromTrash = async (id: string) => {
+  try {
+    const trashList = await getTrashList();
+    const remaining = trashList.filter(t => t.id !== id);
+    localStorage.setItem('kdp_trash_bin', JSON.stringify(remaining));
+
+    localStorage.removeItem(`kdp_project_${id}`);
+    localStorage.removeItem(`kdp_emergency_${id}`);
+
+    if (!isFirestoreQuotaExceeded && auth.currentUser) {
+      try {
+        await deleteDoc(doc(db, 'projects', id));
+      } catch (e) {}
+    }
+  } catch (e) {
+    console.error("Error permanently deleting project:", e);
+  }
+};
+
+export const emptyTrash = async () => {
+  try {
+    const trashList = await getTrashList();
+    trashList.forEach(t => {
+      localStorage.removeItem(`kdp_project_${t.id}`);
+      localStorage.removeItem(`kdp_emergency_${t.id}`);
+    });
+    localStorage.removeItem('kdp_trash_bin');
+  } catch (e) {
+    console.error("Error emptying trash:", e);
+  }
+};
+
 export const getProjectsList = async (): Promise<any[]> => {
   let localList: any[] = [];
+  const trashIds = getTrashSet();
+
   try {
     const raw = localStorage.getItem('kdp_projects_index');
     if (raw) localList = JSON.parse(raw);
 
-    // Auto-discover any orphaned project keys in LocalStorage and add them to the index
+    // Auto-discover any orphaned project keys in LocalStorage and add them to the index ONLY IF THEY HAVE REAL CONTENT
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i);
       if (key && key.startsWith('kdp_project_') && key !== 'kdp_projects_index') {
@@ -57,29 +232,50 @@ export const getProjectsList = async (): Promise<any[]> => {
           const itemRaw = localStorage.getItem(key);
           if (itemRaw) {
             const p = JSON.parse(itemRaw);
-            if (p && p.id) {
-              const exists = localList.some((x: any) => x.id === p.id);
-              if (!exists) {
-                localList.push({
-                  id: p.id,
-                  title: p.title || 'Untitled Book',
-                  updatedAt: p.updatedAt || Date.now(),
-                  category: p.category || 'non_fiction',
-                  idea: p.idea || ''
-                });
+            if (p && p.id && !trashIds.has(p.id)) {
+              if (hasProjectContent(p)) {
+                const exists = localList.some((x: any) => x.id === p.id);
+                if (!exists) {
+                  localList.push({
+                    id: p.id,
+                    title: p.title || p.bookDetails?.title || 'Untitled Book',
+                    updatedAt: p.updatedAt || Date.now(),
+                    category: p.category || 'non_fiction',
+                    idea: p.idea || ''
+                  });
+                }
+              } else {
+                // Prune 0-content empty ghost file from storage so it doesn't clutter
+                localStorage.removeItem(key);
               }
             }
           }
         } catch (e) {}
       }
     }
+
+    // Filter out trashed items and ghost items
+    localList = localList.filter((p: any) => {
+      if (!p || !p.id || trashIds.has(p.id)) return false;
+      const rawItem = localStorage.getItem(`kdp_project_${p.id}`);
+      if (rawItem) {
+        try {
+          const parsed = JSON.parse(rawItem);
+          return hasProjectContent(parsed);
+        } catch (e) {
+          return true;
+        }
+      }
+      return true;
+    });
+
     localStorage.setItem('kdp_projects_index', JSON.stringify(localList));
   } catch (e) {
     console.warn("LocalStorage read error:", e);
   }
 
   if (isFirestoreQuotaExceeded || !auth.currentUser) {
-    return localList.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+    return [...localList].sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
   }
 
   try {
@@ -87,10 +283,14 @@ export const getProjectsList = async (): Promise<any[]> => {
     const qs = await getDocs(q);
     const remoteList = qs.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
-    // Merge remote with local, keeping latest or all
+    // Merge remote with local, excluding trashed
     const map = new Map<string, any>();
-    localList.forEach(p => map.set(p.id, p));
+    localList.forEach(p => {
+      if (!trashIds.has(p.id)) map.set(p.id, p);
+    });
+    
     remoteList.forEach((p: any) => {
+      if (trashIds.has(p.id)) return;
       const existing = map.get(p.id);
       if (!existing || (p.updatedAt && p.updatedAt > existing.updatedAt)) {
         map.set(p.id, p);
@@ -105,7 +305,7 @@ export const getProjectsList = async (): Promise<any[]> => {
     } else {
       console.warn("Failed to fetch remote projects list:", e);
     }
-    return localList;
+    return [...localList].sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
   }
 };
 
@@ -138,7 +338,10 @@ export const saveProject = async (project: ProjectSave) => {
       research: project.research ? JSON.stringify(project.research) : "null",
       outline: project.outline || '',
       bookDetails: project.bookDetails ? JSON.stringify(project.bookDetails) : "null",
-      assets: project.assets ? JSON.stringify(project.assets) : "null"
+      assets: project.assets ? JSON.stringify(project.assets) : "null",
+      continuityMemory: project.continuityMemory ? JSON.stringify(project.continuityMemory) : "null",
+      characterBible: project.characterBible ? JSON.stringify(project.characterBible) : "null",
+      chapterIllustrations: project.chapterIllustrations ? JSON.stringify(project.chapterIllustrations) : "null"
     };
 
     await setDoc(docRef, projData, { merge: true });
@@ -222,10 +425,13 @@ export const loadProject = async (id: string): Promise<ProjectSave | null> => {
         item_idea: proj.idea,
         idea: proj.idea,
         category: proj.category,
-        research: proj.research !== "null" ? JSON.parse(proj.research) : null,
+        research: proj.research && proj.research !== "null" ? JSON.parse(proj.research) : null,
         outline: proj.outline,
         bookDetails: proj.bookDetails && proj.bookDetails !== "null" ? JSON.parse(proj.bookDetails) : null,
-        assets: proj.assets !== "null" ? JSON.parse(proj.assets) : {},
+        assets: proj.assets && proj.assets !== "null" ? JSON.parse(proj.assets) : {},
+        continuityMemory: proj.continuityMemory && proj.continuityMemory !== "null" ? JSON.parse(proj.continuityMemory) : undefined,
+        characterBible: proj.characterBible && proj.characterBible !== "null" ? JSON.parse(proj.characterBible) : undefined,
+        chapterIllustrations: proj.chapterIllustrations && proj.chapterIllustrations !== "null" ? JSON.parse(proj.chapterIllustrations) : undefined,
         chapters: chapters.map((c: any) => ({
             id: c.id,
             title: c.title,
@@ -251,28 +457,11 @@ export const loadProject = async (id: string): Promise<ProjectSave | null> => {
   }
 };
 
-export const deleteProject = async (id: string) => {
-  try {
-    localStorage.removeItem(`kdp_project_${id}`);
-    const raw = localStorage.getItem('kdp_projects_index');
-    if (raw) {
-      const list = JSON.parse(raw);
-      const filtered = list.filter((p: any) => p.id !== id);
-      localStorage.setItem('kdp_projects_index', JSON.stringify(filtered));
-    }
-  } catch (e) {
-    console.warn("LocalStorage delete error:", e);
+export const deleteProject = async (id: string, permanent: boolean = false) => {
+  if (!permanent) {
+    return await moveToTrash(id);
   }
-
-  if (isFirestoreQuotaExceeded || !auth.currentUser) return;
-
-  try {
-    await deleteDoc(doc(db, 'projects', id));
-  } catch(e: any) {
-    if (e?.code === 'resource-exhausted' || e?.message?.includes('Quota limit exceeded')) {
-      isFirestoreQuotaExceeded = true;
-    }
-  }
+  return await permanentlyDeleteFromTrash(id);
 };
 
 export const getUserSettings = async () => {

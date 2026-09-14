@@ -17,6 +17,7 @@ export type ViewMode =
   | 'outline'
   | 'toc'
   | 'chapter'
+  | 'visual_designer'
   | 'assets'
   | 'marketing'
   | 'humanizer'

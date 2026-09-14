@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useMemo, ChangeEvent } from 'react';
-import { BookOpen, FileText, Image as ImageIcon, Headphones, Settings, CheckCircle2, Loader2, Download, PlayCircle, MessageSquare, Send, ChevronRight, ChevronLeft, PanelLeft, List, Key, X, UploadCloud, Library, Plus, Paperclip, User, Tag, Type, Sparkles, Link, Menu, Trash2, Save, Edit3, Sliders, Check, RotateCcw, RotateCw, History, SlidersHorizontal, Palette, Copy, Wand2, LifeBuoy, AlertTriangle, RefreshCw, Layers, Box, Eye, Book, Megaphone, Share2, Mail, Globe, Compass, ExternalLink, Calendar, Award, Search, HelpCircle, DollarSign, Square, ListTree, AlignLeft, Printer, TrendingUp, Brain, Bot } from 'lucide-react';
+import { BookOpen, FileText, Image as ImageIcon, Headphones, Settings, CheckCircle2, Loader2, Download, PlayCircle, MessageSquare, Send, ChevronRight, ChevronLeft, PanelLeft, List, Key, X, UploadCloud, Library, Plus, Paperclip, User, Tag, Type, Sparkles, Link, Menu, Trash2, Save, Edit3, Sliders, Check, RotateCcw, RotateCw, History, SlidersHorizontal, Palette, Copy, Wand2, LifeBuoy, AlertTriangle, RefreshCw, Layers, Box, Eye, Book, Megaphone, Share2, Mail, Globe, Compass, ExternalLink, Calendar, Award, Search, HelpCircle, DollarSign, Square, ListTree, AlignLeft, Printer, TrendingUp, Brain, Bot, GripVertical, ChevronUp, ChevronDown } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import Markdown from 'react-markdown';
 import {
@@ -12,6 +12,7 @@ import {
   synthesizeAudiobook,
   optimizeMetadata,
   generateInlineImage,
+  testGeminiApiKey,
   Attachment,
   generateBackCover,
   extractWritingStyle,
@@ -29,11 +30,13 @@ import {
   summarizeChapterForContinuity,
   extractExistingCharacterNames,
   LearnedRule,
-  ContinuityContext
+  ContinuityContext,
+  CharacterProfile,
+  ChapterIllustration
 } from './services/geminiService';
-import { exportToDocx, exportPublishingZipBundle, exportLandingPageHtml, getLandingPageHtmlString } from './services/exportService';
+import { exportToDocx, exportEpubManuscript, exportPublishingZipBundle, exportLandingPageHtml, getLandingPageHtmlString } from './services/exportService';
 import { extractTextFromFile } from './utils/fileParser';
-import { saveProject, loadProject, getProjectsList, deleteProject, getUserSettings, saveUserSettings, saveEmergencySnapshot, scanAllLocalBackups, savePublishedLandingPage, getPublishedLandingPage, deletePublishedLandingPage, PublishedLandingData } from './services/storage';
+import { saveProject, loadProject, getProjectsList, deleteProject, getUserSettings, saveUserSettings, saveEmergencySnapshot, scanAllLocalBackups, savePublishedLandingPage, getPublishedLandingPage, deletePublishedLandingPage, PublishedLandingData, moveToTrash, getTrashList, restoreFromTrash, permanentlyDeleteFromTrash, emptyTrash, TrashItem, hasProjectContent } from './services/storage';
 import { auth, loginWithGoogle, logoutUser, getUserProfile, ensureUserProfile, trackAIWordUsage, UserProfile } from './services/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
 import { CommandPalette } from './components/CommandPalette';
@@ -45,6 +48,7 @@ import { TableOfContentsStudio } from './components/TableOfContentsStudio';
 import { HumanizerStudio } from './components/HumanizerStudio';
 import { AudiobookStudio } from './components/AudiobookStudio';
 import { AmazonNicheResearchStudio } from './components/AmazonNicheResearchStudio';
+import { VisualDesignerStudio } from './components/VisualDesignerStudio';
 import { ContinuityMemoryModal } from './components/ContinuityMemoryModal';
 import { AuthModal } from './components/AuthModal';
 import { SubscriptionModal } from './components/SubscriptionModal';
@@ -56,14 +60,66 @@ import { VersionHistoryModal, ChapterRevision } from './components/VersionHistor
 import { GenerationProgressLogger } from './components/GenerationProgressLogger';
 import { humanizeManuscript, analyzeAiScore } from './services/geminiService';
 
-type ViewMode = 'library' | 'setup' | 'details' | 'outline' | 'toc' | 'chapter' | 'assets' | 'marketing' | 'humanizer' | 'audiobook' | 'research';
+type ViewMode = 'library' | 'setup' | 'details' | 'outline' | 'toc' | 'chapter' | 'assets' | 'visual_designer' | 'marketing' | 'humanizer' | 'audiobook' | 'research';
 
-type Category = 'non_fiction' | 'fiction' | 'guides';
+type Category = 'non_fiction' | 'fiction' | 'children_stories' | 'guides' | 'sales_copy' | 'white_paper' | 'web_copy';
 
 const CATEGORIES: Record<Category, string> = {
   non_fiction: "Non-Fiction Publication",
   fiction: "Fiction & Storytelling",
-  guides: "How-to Guides & Manuals"
+  children_stories: "Children's Stories & Picture Books",
+  guides: "How-to Guides & Manuals",
+  sales_copy: "Sales Copy & Direct Response",
+  white_paper: "White Paper & Industry Report",
+  web_copy: "Web Copy & Landing Pages"
+};
+
+export const BOOK_SUBCATEGORIES: Record<string, { id: string; label: string; desc: string; targetAge?: string }[]> = {
+  children_stories: [
+    { id: 'picture_books', label: "Picture Books & Bedtime Tales", desc: "Vibrant illustration cues, soothing rhythmic cadence, simple vocabulary, and engaging repetition", targetAge: "Ages 2–6" },
+    { id: 'early_readers', label: "Early Readers & Phonics Tales", desc: "Short accessible sentences, encouraging dialogue, relatable adventures, and clear milestones", targetAge: "Ages 5–8" },
+    { id: 'chapter_books', label: "Illustrated Chapter Books", desc: "Episodic adventure arcs, witty character dynamics, and illustrated scene prompts", targetAge: "Ages 6–10" },
+    { id: 'middle_grade', label: "Middle Grade Fiction & Mystery", desc: "Emotional depth, fast-paced quest/mystery arcs, moral courage, and authentic youth voices", targetAge: "Ages 8–12" },
+    { id: 'bedtime_fables', label: "Bedtime Fables & Moral Stories", desc: "Calming soothing pacing, gentle life lessons, empathy building, and imaginative dreamscapes", targetAge: "Ages 3–8" },
+    { id: 'educational_stem', label: "Educational & STEM Wonder Tales", desc: "Curiosity-sparking scientific discoveries woven seamlessly into narrative adventures", targetAge: "Ages 5–10" }
+  ],
+  fiction: [
+    { id: 'mystery_thriller', label: "Mystery, Thriller & Suspense", desc: "Fast-paced tension, gripping plot twists, detectives, crime, and high-stakes resolutions" },
+    { id: 'crime_detective', label: "Crime Fiction & Police Procedurals", desc: "Hardboiled detectives, gritty criminal underworlds, forensic mysteries, and intense whodunits" },
+    { id: 'romance', label: "Romance & Romantic Comedy", desc: "Emotional chemistry, relationship dynamics, heartfelt tropes, and satisfying happily-ever-afters" },
+    { id: 'women_fiction', label: "Women's Fiction & Family Sagas", desc: "Generational bonds, emotional resilience, motherhood, sisterhood, and life turning points" },
+    { id: 'fantasy_magic', label: "Fantasy & Epic Realms", desc: "Immersive magical systems, mythical creatures, quest arcs, and legendary worldbuilding" },
+    { id: 'sci_fi', label: "Science Fiction & Cyberpunk", desc: "Space opera, futuristic technology, dystopian futures, time travel, and AI dilemmas" },
+    { id: 'dystopian_apocalyptic', label: "Dystopian & Post-Apocalyptic", desc: "Societal collapse, survival instincts, totalitarian regimes, and rebuilding civilization" },
+    { id: 'action_adventure', label: "Action & Adventure", desc: "High-octane survival, global espionage, ancient artifacts, and relentless hero journeys" },
+    { id: 'horror_supernatural', label: "Horror & Dark Supernatural", desc: "Chilling psychological dread, haunted settings, eerie mysteries, and occult folklore" },
+    { id: 'paranormal_urban_fantasy', label: "Paranormal & Urban Fantasy", desc: "Mythical beings in modern cities, occult investigations, vampires, shapeshifters, and magic in the real world" },
+    { id: 'historical_fiction', label: "Historical Fiction", desc: "Authentic period detail, historical events, cultural textures, and timeless human drama" },
+    { id: 'literary_contemporary', label: "Literary & Contemporary Drama", desc: "Deep character-driven prose, philosophical depth, family sagas, and social themes" },
+    { id: 'humor_satire', label: "Humorous Fiction & Satirical Novels", desc: "Witty banter, absurd misadventures, situational comedy, and sharp social satire" },
+    { id: 'young_adult', label: "Young Adult (YA) Fiction", desc: "Coming-of-age journeys, high-stakes teenage drama, rebellion, and emotional discovery" },
+    { id: 'short_stories_anthology', label: "Short Story Collections & Anthologies", desc: "Bite-sized narrative arcs, themed literary shorts, and compact worldbuilding" }
+  ],
+  non_fiction: [
+    { id: 'self_help', label: "Self-Help & Personal Growth", desc: "Habits, mindset shifts, emotional resilience, and practical life frameworks" },
+    { id: 'business_leadership', label: "Business & Thought Leadership", desc: "Strategy, entrepreneurship, organizational culture, and case study breakthroughs" },
+    { id: 'health_wellness', label: "Health, Nutrition & Wellness", desc: "Longevity, fitness, mental health, somatic wellbeing, and science-backed protocols" },
+    { id: 'biography_memoir', label: "Memoir & Narrative Non-Fiction", desc: "True stories, personal transformation, lived experiences, and inspiring life journeys" }
+  ],
+  guides: [
+    { id: 'how_to_manual', label: "Step-by-Step Practical Manual", desc: "Clear instructions, action checklists, diagrams, and execution roadmaps" },
+    { id: 'masterclass_handbook', label: "Professional Masterclass Handbook", desc: "Deep technical blueprints, best practices, troubleshooting, and expert workflows" }
+  ]
+};
+
+export const DEFAULT_CATEGORY_PROMPTS: Record<Category, string> = {
+  sales_copy: "You are an elite Direct-Response Copywriting Legend and Conversion Strategist (inspired by Gary Halbert, Dan Kennedy, Eugene Schwartz). Write high-converting, psychologically compelling copy that hooks readers instantly, agitates core pain points, presents an irresistible offer with proof and case studies, overcomes objections before they arise, and drives decisive action with urgent, crystal-clear CTAs. Use powerful conversational cadence, active verbs, rhythmic line breaks, subheads, bulleted benefits (fascinations), risk-reversals, and social proof integration. Strictly avoid dry corporate jargon and generic fluff.",
+  white_paper: "You are a Senior B2B Strategy Consultant, Enterprise Technology Architect, and Principal Industry Analyst (McKinsey/Gartner-grade). Synthesize authoritative, data-driven white papers with executive summaries, empirical problem framing, deep architectural frameworks, comparative benchmarks, implementation roadmaps, governance considerations, and strategic recommendations. Maintain a rigorous, credible, objective executive tone with structured Markdown tables, key takeaway callouts, and clear analytical definitions. Zero hype or empty buzzwords.",
+  web_copy: "You are a master Digital UX & Conversion Rate Optimization (CRO) Copywriter. Craft high-impact, scannable web and landing page copy optimized for rapid comprehension and high conversion. Write punchy above-the-fold hero hooks, benefit-driven H1/H2 headlines, problem/solution matrices, modular feature breakdowns with 'Feature -> Benefit -> Meaning' structures, social proof blocks, objection-busting FAQs, and frictionless Call-to-Action (CTA) sections. Keep prose punchy, mobile-friendly, engaging, and action-oriented.",
+  children_stories: "You are an acclaimed children's author, master storyteller, and literacy specialist (inspired by Roald Dahl, Julia Donaldson, Maurice Sendak, and E.B. White). Write enchanting, age-appropriate children's stories with vivid sensory imagery, delightful rhythmic cadence, engaging character personalities, playful dialogue, and gentle positive moral or emotional themes. Include visual illustration prompts in brackets [Illustration: ...] to guide page artists or AI image generation. Keep language captivating, accessible, and free of dry adult abstractions or inappropriate violence.",
+  non_fiction: "You are a master non-fiction ghostwriter and bestselling thought leader. Write authoritative, engaging, and deeply researched chapters that blend compelling storytelling, real-world case studies, psychological insight, actionable frameworks, and memorable takeaways. Maintain an inspiring, conversational, yet authoritative cadence that keeps readers hooked from first word to last.",
+  fiction: "You are a master fiction novelist and narrative architect. Craft immersive storytelling with vivid sensory world-building, sharp character-driven dialogue, escalating narrative tension, rich subtext, emotional vulnerability, and satisfying scene resolution. Follow strict character naming diversity and eliminate repetitive AI tropes.",
+  guides: "You are an expert instructional designer, master educator, and technical author. Deliver crystal-clear, step-by-step how-to guides and operational manuals. Use structured action checklists, visual breakdowns, troubleshooting matrices, prerequisite warnings, and pro-tips to ensure readers achieve rapid, foolproof implementation."
 };
 
 const LANGUAGES = [
@@ -139,6 +195,17 @@ const BISAC_CATEGORIES = [
   "FICTION / Thrillers / Technological",
   "FICTION / Urban & Street Lit",
   "FICTION / Westerns",
+
+  // YOUNG ADULT FICTION
+  "YOUNG ADULT FICTION / General",
+  "YOUNG ADULT FICTION / Action & Adventure",
+  "YOUNG ADULT FICTION / Coming of Age",
+  "YOUNG ADULT FICTION / Dystopian",
+  "YOUNG ADULT FICTION / Fantasy / General",
+  "YOUNG ADULT FICTION / Mystery & Detective",
+  "YOUNG ADULT FICTION / Romance / General",
+  "YOUNG ADULT FICTION / Science Fiction",
+  "YOUNG ADULT FICTION / Social Themes",
 
   // NON-FICTION - BUSINESS & ECONOMICS
   "NON-FICTION / General",
@@ -290,13 +357,25 @@ const BISAC_CATEGORIES = [
   "PHOTOGRAPHY / General",
 
   // CHILDREN, JUVENILE & YOUNG ADULT
+  "JUVENILE FICTION / General",
+  "JUVENILE FICTION / Action & Adventure / General",
+  "JUVENILE FICTION / Animals / General",
+  "JUVENILE FICTION / Bedtime & Dreams",
+  "JUVENILE FICTION / Fairy Tales & Folklore / General",
+  "JUVENILE FICTION / Fantasy & Magic",
+  "JUVENILE FICTION / Humorous Stories",
+  "JUVENILE FICTION / Interactive & Early Learning",
+  "JUVENILE FICTION / Readers / Beginner",
+  "JUVENILE FICTION / Readers / Chapter Books",
+  "JUVENILE FICTION / Social Themes / Friendship & Values",
+  "JUVENILE FICTION / Science Fiction",
+  "JUVENILE NONFICTION / General",
+  "JUVENILE NONFICTION / Animals / General",
+  "JUVENILE NONFICTION / Science & Nature / General",
   "YOUNG ADULT FICTION / General",
   "YOUNG ADULT FICTION / Fantasy / General",
   "YOUNG ADULT FICTION / Romance / General",
-  "YOUNG ADULT NONFICTION / General",
-  "JUVENILE FICTION / General",
-  "JUVENILE FICTION / Animals",
-  "JUVENILE NONFICTION / General"
+  "YOUNG ADULT NONFICTION / General"
 ];
 
 function formatMetadataKeywords(rawKeywords: any): string[] {
@@ -370,6 +449,7 @@ interface BookDetails {
   aboutAuthor: string;
   keywords: string[];
   categories: string[];
+  subCategory?: string;
   pricing: string;
   trimSize: string;
   language: string;
@@ -611,7 +691,29 @@ function parseMarkdownToChaptersLocally(rawText: string) {
 
 const generateId = () => Math.random().toString(36).substring(2, 9);
 
-function ChapterView({ chapter, onContentChange, onRegenerate, onHumanize, onShowVersionHistory, onDelete, onUndo, canUndo, components }: { chapter: Chapter, onContentChange: (c: string) => void, onRegenerate: () => void, onHumanize?: () => void, onShowVersionHistory?: () => void, onDelete?: () => void, onUndo?: () => void, canUndo?: boolean, components: any }) {
+function ChapterView({ 
+  chapter, 
+  onContentChange, 
+  onRegenerate, 
+  onHumanize, 
+  onIllustrate,
+  onShowVersionHistory, 
+  onDelete, 
+  onUndo, 
+  canUndo, 
+  components 
+}: { 
+  chapter: Chapter, 
+  onContentChange: (c: string) => void, 
+  onRegenerate: () => void, 
+  onHumanize?: () => void, 
+  onIllustrate?: () => void,
+  onShowVersionHistory?: () => void, 
+  onDelete?: () => void, 
+  onUndo?: () => void, 
+  canUndo?: boolean, 
+  components: any 
+}) {
   const [isEditing, setIsEditing] = useState(false);
   const isAuthorPage = chapter.title.toLowerCase().includes('about the author');
 
@@ -669,6 +771,16 @@ function ChapterView({ chapter, onContentChange, onRegenerate, onHumanize, onSho
         </div>
 
         <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+          {onIllustrate && (
+            <button
+              onClick={onIllustrate}
+              className="flex-1 sm:flex-none justify-center items-center gap-1.5 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all shadow-sm cursor-pointer"
+              title="Generate cohesive children's storybook scene illustrations using Nano Banana AI"
+            >
+              <Palette className="w-3.5 h-3.5 text-yellow-200" />
+              <span>Illustrate Scene (Nano Banana)</span>
+            </button>
+          )}
           {onShowVersionHistory && (
             <button
               onClick={onShowVersionHistory}
@@ -907,6 +1019,213 @@ function AuthorSocialsForm({
   );
 }
 
+interface ApiKeyRequiredModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  initialKey: string;
+  errorMessage?: string | null;
+  onKeySaved: (key: string) => void;
+}
+
+function ApiKeyRequiredModal({
+  isOpen,
+  onClose,
+  initialKey,
+  errorMessage,
+  onKeySaved
+}: ApiKeyRequiredModalProps) {
+  const [keyInput, setKeyInput] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [isTesting, setIsTesting] = useState(false);
+  const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
+
+  useEffect(() => {
+    if (isOpen) {
+      const stored = localStorage.getItem('user_custom_gemini_key') || localStorage.getItem('gemini_api_key') || initialKey || '';
+      setKeyInput(stored);
+      setTestResult(null);
+    }
+  }, [isOpen, initialKey]);
+
+  if (!isOpen) return null;
+
+  const handleTestAndSave = async () => {
+    const trimmed = keyInput.trim();
+    if (!trimmed) {
+      setTestResult({ success: false, message: 'Please enter or paste your Google Gemini API key.' });
+      return;
+    }
+
+    setIsTesting(true);
+    setTestResult(null);
+
+    const res = await testGeminiApiKey(trimmed);
+    setIsTesting(false);
+    setTestResult(res);
+
+    if (res.success) {
+      localStorage.setItem('user_custom_gemini_key', trimmed);
+      localStorage.setItem('gemini_api_key', trimmed);
+      onKeySaved(trimmed);
+      setTimeout(() => {
+        onClose();
+      }, 1200);
+    }
+  };
+
+  const handlePasteFromClipboard = async () => {
+    try {
+      const text = await navigator.clipboard.readText();
+      if (text && text.trim()) {
+        setKeyInput(text.trim());
+      }
+    } catch (e) {
+      // ignore
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-zinc-950/70 backdrop-blur-xs">
+      <div className="bg-white w-full max-w-lg rounded-3xl shadow-2xl border border-zinc-200 overflow-hidden">
+        {/* Header */}
+        <div className="p-5 border-b border-zinc-100 bg-gradient-to-r from-amber-50 via-orange-50 to-white flex items-start justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-2xl bg-amber-500 text-white flex items-center justify-center shadow-md shadow-amber-500/20">
+              <Key className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="font-bold text-zinc-900 text-base">Google Gemini API Key Required</h3>
+              <p className="text-xs text-zinc-500">Bring Your Own Key (BYOK) for Unlimited Drafting & Publishing</p>
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            className="p-1 text-zinc-400 hover:text-zinc-600 hover:bg-zinc-100 rounded-lg transition-colors cursor-pointer"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* Content */}
+        <div className="p-6 space-y-5 max-h-[80vh] overflow-y-auto">
+          {/* Notice Callout */}
+          <div className="p-4 rounded-2xl bg-amber-50/90 border border-amber-200 text-amber-900 text-xs space-y-2">
+            <div className="flex items-center gap-2 font-bold text-amber-950 text-xs">
+              <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+              <span>{errorMessage || "API Key Update Needed"}</span>
+            </div>
+            <p className="leading-relaxed text-zinc-700">
+              Google reported that the application's shared API key has expired or was reported as leaked. To continue generating outlines, research, chapters, and artwork without disruption, please enter your free personal Google Gemini API key below.
+            </p>
+          </div>
+
+          {/* Quick 1-Click Link to Google AI Studio */}
+          <div className="bg-indigo-50/60 border border-indigo-100 rounded-2xl p-4 space-y-2.5">
+            <div className="flex items-center justify-between">
+              <span className="font-bold text-xs text-indigo-950 flex items-center gap-1.5">
+                <Sparkles className="w-3.5 h-3.5 text-indigo-600" /> Need a free API key?
+              </span>
+              <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full">100% Free Tier</span>
+            </div>
+            <p className="text-xs text-zinc-600">
+              Get an instant API key directly from Google AI Studio in 30 seconds:
+            </p>
+            <a
+              href="https://aistudio.google.com/app/apikey"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="w-full flex items-center justify-center gap-2 py-2.5 px-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-indigo-600/20 cursor-pointer"
+            >
+              <span>Get Free Key at aistudio.google.com</span>
+              <ExternalLink className="w-3.5 h-3.5" />
+            </a>
+          </div>
+
+          {/* Input field */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-bold text-zinc-800">
+                Paste Your Google Gemini API Key
+              </label>
+              <button
+                type="button"
+                onClick={handlePasteFromClipboard}
+                className="text-[11px] font-semibold text-indigo-600 hover:text-indigo-800 flex items-center gap-1 cursor-pointer"
+              >
+                <Copy className="w-3 h-3" /> Paste from Clipboard
+              </button>
+            </div>
+            <div className="relative">
+              <input
+                type={showPassword ? "text" : "password"}
+                value={keyInput}
+                onChange={(e) => {
+                  setKeyInput(e.target.value);
+                  setTestResult(null);
+                }}
+                placeholder="AIzaSy..."
+                className="w-full bg-zinc-50 border border-zinc-300 rounded-xl px-3.5 py-2.5 text-xs font-mono text-zinc-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 pr-20"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-zinc-500 hover:text-zinc-800 font-medium px-1.5 py-0.5 rounded cursor-pointer"
+              >
+                {showPassword ? "Hide" : "Show"}
+              </button>
+            </div>
+          </div>
+
+          {/* Verification Status */}
+          {testResult && (
+            <div className={`p-3 rounded-xl border text-xs flex items-center gap-2 ${
+              testResult.success
+                ? 'bg-emerald-50 border-emerald-200 text-emerald-800 font-semibold'
+                : 'bg-red-50 border-red-200 text-red-800'
+            }`}>
+              {testResult.success ? (
+                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+              ) : (
+                <AlertTriangle className="w-4 h-4 text-red-600 shrink-0" />
+              )}
+              <span>{testResult.message}</span>
+            </div>
+          )}
+
+          {/* Buttons */}
+          <div className="flex items-center gap-3 pt-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex-1 py-2.5 px-4 rounded-xl border border-zinc-300 text-zinc-700 text-xs font-semibold hover:bg-zinc-50 transition-colors cursor-pointer"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleTestAndSave}
+              disabled={isTesting || !keyInput.trim()}
+              className="flex-1 flex items-center justify-center gap-2 py-2.5 px-4 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-emerald-600/20 cursor-pointer"
+            >
+              {isTesting ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>Validating Key...</span>
+                </>
+              ) : (
+                <>
+                  <Check className="w-4 h-4" />
+                  <span>Test & Save Key</span>
+                </>
+              )}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 interface BookSnapshot {
   chapters: Chapter[];
   outline: string;
@@ -956,6 +1275,7 @@ export default function App() {
   const [research, setResearch] = useState<any>(null);
   const [outline, setOutline] = useState('');
   const [chapters, setChapters] = useState<Chapter[]>([]);
+  const [draggedChapterIndex, setDraggedChapterIndex] = useState<number | null>(null);
   const [bookDetails, setBookDetails] = useState<BookDetails>({
     title: '',
     subtitle: '',
@@ -970,6 +1290,10 @@ export default function App() {
     inspirationImage: null
   });
   const [assets, setAssets] = useState<{coverUrl?: string | null, audioUrl?: string | null, metadata?: any, backCoverContent?: string}>({});
+
+  // Visual Designer & Illustration Pipeline (Character Bible & Chapter Illustrations)
+  const [characterBible, setCharacterBible] = useState<CharacterProfile[]>([]);
+  const [chapterIllustrations, setChapterIllustrations] = useState<ChapterIllustration[]>([]);
 
   // Cross-Chapter Cohesion & Editorial Memory State
   const [continuityMemory, setContinuityMemory] = useState<{
@@ -1002,6 +1326,12 @@ export default function App() {
   // Recovery Center State
   const [showRecoveryModal, setShowRecoveryModal] = useState<boolean>(false);
   const [recoveredBackupsList, setRecoveredBackupsList] = useState<Array<any>>([]);
+
+  // Trash & Safe Delete Protection State
+  const [projectToDelete, setProjectToDelete] = useState<{ id: string; title: string; category?: string; chapterCount?: number; wordCount?: number; updatedAt?: number; idea?: string } | null>(null);
+  const [showTrashModal, setShowTrashModal] = useState<boolean>(false);
+  const [trashList, setTrashList] = useState<TrashItem[]>([]);
+  const [undoDeleteToast, setUndoDeleteToast] = useState<{ id: string; title: string } | null>(null);
 
   // Markdown Manuscript Importer State
   const [showMdImportModal, setShowMdImportModal] = useState<boolean>(false);
@@ -1147,6 +1477,41 @@ export default function App() {
   };
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [customApiKey, setCustomApiKey] = useState('');
+  const [isApiKeyModalOpen, setIsApiKeyModalOpen] = useState(false);
+  const [apiKeyModalMessage, setApiKeyModalMessage] = useState<string | null>(null);
+
+  const handleApiError = (e: any, defaultContextMsg: string) => {
+    const rawMsg = e?.message || "Unknown error";
+    console.error(`[API Error in ${defaultContextMsg}]:`, e);
+
+    if (
+      rawMsg.includes('API_KEY_LEAKED') ||
+      rawMsg.includes('leaked') ||
+      rawMsg.includes('compromised') ||
+      rawMsg.includes('API_KEY_INVALID') ||
+      rawMsg.includes('API key not valid') ||
+      rawMsg.includes('API Key Missing') ||
+      rawMsg.includes('API_KEY_ERROR')
+    ) {
+      const isLeaked = rawMsg.includes('leaked') || rawMsg.includes('API_KEY_LEAKED') || rawMsg.includes('compromised');
+      setApiKeyModalMessage(
+        isLeaked
+          ? "Google reported that the application's shared API key was leaked/deactivated. Enter your free Google Gemini API key below to continue without interruptions."
+          : "A valid Google Gemini API key is required. Please paste your Google Gemini API key below to continue."
+      );
+      setIsApiKeyModalOpen(true);
+      return;
+    }
+
+    if (rawMsg.includes('RESOURCE_EXHAUSTED') || rawMsg.includes('429') || rawMsg.includes('quota')) {
+      setApiKeyModalMessage("Gemini API rate limit reached (429 Quota Exceeded). Providing your own free personal API key gives you dedicated quota with zero rate limits!");
+      setIsApiKeyModalOpen(true);
+      return;
+    }
+
+    alert(`${defaultContextMsg}: ${rawMsg}`);
+  };
+  const [categoryPrompts, setCategoryPrompts] = useState<Record<Category, string>>(DEFAULT_CATEGORY_PROMPTS);
   const DEFAULT_ELEVENLABS_KEY = 'sk_716bc2b43a089a12f75c4a3be97c723e0aad0cbcd33cd90a';
   const [elevenLabsApiKey, setElevenLabsApiKey] = useState<string>(() => {
     return localStorage.getItem('elevenlabs_api_key') || DEFAULT_ELEVENLABS_KEY;
@@ -1401,6 +1766,9 @@ export default function App() {
         }
         const conf = await getUserSettings();
         if (conf?.customApiKey) setCustomApiKey(conf.customApiKey);
+        if (conf?.prompts) {
+          setCategoryPrompts(prev => ({ ...prev, ...conf.prompts }));
+        }
         if (conf?.socials || conf?.defaultSocials) {
           const userSocials = conf.socials || conf.defaultSocials;
           setBookDetails(prev => ({
@@ -1423,9 +1791,22 @@ export default function App() {
   useEffect(() => {
     if (!projectId) return;
 
+    // PREVENT BLANK GHOST DRAFTS: Only auto-save to library index if project has real user content
+    const isCustomTitle = Boolean(bookDetails.title?.trim() && bookDetails.title.trim() !== 'Untitled Project' && bookDetails.title.trim() !== 'Untitled Book' && bookDetails.title.trim() !== 'Untitled Manuscript');
+    const hasChapters = Array.isArray(chapters) && chapters.length > 0;
+    const hasIdea = Boolean(idea?.trim());
+    const hasOutline = Boolean(outline?.trim());
+    const hasResearch = Boolean(research);
+    const hasIllustrations = Boolean(characterBible?.length || chapterIllustrations?.length);
+    const hasRealContent = isCustomTitle || hasChapters || hasIdea || hasOutline || hasResearch || hasIllustrations;
+
+    if (!hasRealContent) {
+      return;
+    }
+
     const currentData = {
       id: projectId,
-      title: bookDetails.title || assets?.metadata?.title || (chapters.length > 0 ? chapters[0].title : null) || (idea ? idea.substring(0, 30) + '...' : 'Untitled Project'),
+      title: bookDetails.title?.trim() || assets?.metadata?.title || (chapters.length > 0 ? chapters[0].title : null) || (idea ? idea.substring(0, 30) + '...' : 'Untitled Manuscript'),
       updatedAt: Date.now(),
       item_idea: idea,
       idea,
@@ -1436,7 +1817,9 @@ export default function App() {
       assets,
       bookDetails,
       chats,
-      continuityMemory
+      continuityMemory,
+      characterBible,
+      chapterIllustrations
     };
 
     saveEmergencySnapshot(currentData);
@@ -1447,7 +1830,7 @@ export default function App() {
     }, 1500);
 
     return () => clearTimeout(saveTimer);
-  }, [idea, category, research, outline, chapters, assets, bookDetails, chats, continuityMemory, projectId, user]);
+  }, [idea, category, research, outline, chapters, assets, bookDetails, chats, continuityMemory, characterBible, chapterIllustrations, projectId, user]);
 
   const handleOpenRecoveryModal = () => {
     const backups = scanAllLocalBackups();
@@ -1455,7 +1838,7 @@ export default function App() {
     setShowRecoveryModal(true);
   };
 
-  const handleRestoreBackup = (backup: any) => {
+  const handleRestoreBackup = async (backup: any) => {
     if (!backup || !backup.data) return;
 
     pushHistorySnapshot("Restored from Local Backup");
@@ -1469,6 +1852,38 @@ export default function App() {
     if (Array.isArray(data.chapters)) setChapters(data.chapters);
     if (data.bookDetails) setBookDetails(data.bookDetails);
     if (data.assets) setAssets(data.assets);
+    if (data.chats) setChats(data.chats);
+    if (Array.isArray(data.characterBible)) setCharacterBible(data.characterBible);
+    if (Array.isArray(data.chapterIllustrations)) setChapterIllustrations(data.chapterIllustrations);
+    if (data.continuityMemory) setContinuityMemory(data.continuityMemory);
+
+    const restoredSaveData = {
+      id: data.id || ('kdp_proj_' + Date.now()),
+      title: data.title || backup.title || 'Restored Manuscript',
+      updatedAt: Date.now(),
+      item_idea: data.idea || '',
+      idea: data.idea || '',
+      category: data.category || 'non_fiction',
+      research: data.research || null,
+      outline: data.outline || '',
+      chapters: Array.isArray(data.chapters) ? data.chapters : [],
+      assets: data.assets || {},
+      bookDetails: data.bookDetails || { title: data.title || backup.title || '' },
+      chats: data.chats || {},
+      continuityMemory: data.continuityMemory,
+      characterBible: data.characterBible,
+      chapterIllustrations: data.chapterIllustrations
+    };
+
+    await saveProject(restoredSaveData);
+    await refreshLibrary();
+
+    if (Array.isArray(data.chapters) && data.chapters.length > 0) {
+      setActiveChapterId(data.chapters[0].id);
+      setViewMode('chapter');
+    } else {
+      setViewMode('setup');
+    }
 
     setHistoryNotice(`Successfully restored manuscript: "${backup.title}" (${backup.chapterCount} chapters, ${backup.wordCount} words)`);
     setTimeout(() => setHistoryNotice(null), 5000);
@@ -1632,6 +2047,8 @@ export default function App() {
     });
     setAssets({});
     setChats({});
+    setCharacterBible([]);
+    setChapterIllustrations([]);
     setMockIsbn(null);
     setImageBag({});
     setViewMode('setup');
@@ -1666,6 +2083,16 @@ export default function App() {
     }
     setAssets(data.assets || {});
     setChats(data.chats || {});
+    if (data.characterBible && Array.isArray(data.characterBible)) {
+      setCharacterBible(data.characterBible);
+    } else {
+      setCharacterBible([]);
+    }
+    if (data.chapterIllustrations && Array.isArray(data.chapterIllustrations)) {
+      setChapterIllustrations(data.chapterIllustrations);
+    } else {
+      setChapterIllustrations([]);
+    }
     if (data.continuityMemory) {
       setContinuityMemory(data.continuityMemory);
     } else {
@@ -1674,15 +2101,94 @@ export default function App() {
     setViewMode('setup');
   };
 
+  const handleOpenTrashModal = async () => {
+    const list = await getTrashList();
+    setTrashList(list);
+    setShowTrashModal(true);
+  };
+
   const handleDeleteProject = async (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
-    if (confirm('Are you sure you want to delete this project?')) {
-      await deleteProject(id);
-      refreshLibrary();
-      if (projectId === id) {
-        setViewMode('library');
-        setProjectId(null);
+    // Locate project card info
+    const projSummary = savedProjects.find(p => p.id === id);
+    let chapterCount = 0;
+    let wordCount = 0;
+    try {
+      const fullData = await loadProject(id);
+      if (fullData) {
+        const chaps = Array.isArray(fullData.chapters) ? fullData.chapters : [];
+        chapterCount = chaps.length;
+        chaps.forEach((c: any) => {
+          if (c?.content) wordCount += c.content.trim().split(/\s+/).filter(Boolean).length;
+        });
       }
+    } catch (err) {}
+
+    setProjectToDelete({
+      id,
+      title: projSummary?.title || 'Untitled Manuscript',
+      category: projSummary?.category || 'non_fiction',
+      chapterCount,
+      wordCount,
+      updatedAt: projSummary?.updatedAt || Date.now(),
+      idea: projSummary?.idea || ''
+    });
+  };
+
+  const handleConfirmMoveToTrash = async () => {
+    if (!projectToDelete) return;
+    const target = projectToDelete;
+    setProjectToDelete(null);
+
+    await moveToTrash(target.id);
+    await refreshLibrary();
+
+    if (projectId === target.id) {
+      setViewMode('library');
+      setProjectId(null);
+    }
+
+    // Floating 15-second undo toast
+    setUndoDeleteToast({ id: target.id, title: target.title });
+    setTimeout(() => {
+      setUndoDeleteToast(prev => (prev?.id === target.id ? null : prev));
+    }, 15000);
+  };
+
+  const handleUndoDelete = async (id: string) => {
+    setUndoDeleteToast(null);
+    const restored = await restoreFromTrash(id);
+    if (restored) {
+      await refreshLibrary();
+      setHistoryNotice(`Successfully restored "${restored.title || 'Manuscript'}" from Trash!`);
+      setTimeout(() => setHistoryNotice(null), 4000);
+      handleOpenProject(id);
+    }
+  };
+
+  const handleRestoreFromTrashModal = async (id: string) => {
+    const restored = await restoreFromTrash(id);
+    if (restored) {
+      const updatedList = await getTrashList();
+      setTrashList(updatedList);
+      await refreshLibrary();
+      setHistoryNotice(`Successfully restored "${restored.title || 'Manuscript'}" to your bookshelf!`);
+      setTimeout(() => setHistoryNotice(null), 4000);
+    }
+  };
+
+  const handlePermanentDeleteFromTrash = async (id: string, title: string) => {
+    if (confirm(`Are you absolutely sure you want to permanently delete "${title}"? This cannot be undone.`)) {
+      await permanentlyDeleteFromTrash(id);
+      const updatedList = await getTrashList();
+      setTrashList(updatedList);
+    }
+  };
+
+  const handleEmptyAllTrash = async () => {
+    if (confirm("Are you sure you want to empty the entire trash bin? All deleted manuscripts in trash will be permanently erased.")) {
+      await emptyTrash();
+      setTrashList([]);
     }
   };
 
@@ -1696,7 +2202,7 @@ export default function App() {
     setGeneratingStep('Preparing context...');
     try {
       const conf = await getUserSettings();
-      const customPrompt = conf?.prompts?.[category] || "You are an expert Ghostwriter.";
+      const customPrompt = conf?.prompts?.[category] || categoryPrompts[category] || DEFAULT_CATEGORY_PROMPTS[category] || "You are an expert ghostwriter.";
 
       let context = '';
       
@@ -1737,7 +2243,7 @@ export default function App() {
         fullIdea = `${idea}\n\n### ADDITIONAL INFLUENCE / SOURCES:\n${context}`;
       }
 
-      setGeneratingStep('Researching niche...');
+      setGeneratingStep('Researching niche & market angle...');
       const res = await researchNiche(fullIdea, customApiKey);
       setResearch(res);
 
@@ -1749,16 +2255,15 @@ export default function App() {
         }));
       }
       
-      setGeneratingStep('Generating outline...');
-      const languagePrompt = bookDetails.language ? `\n\nCRITICAL: You MUST write the entire outline in ${bookDetails.language}. All chapter titles and bullet points MUST be in ${bookDetails.language}.` : '';
-      const out = await generateOutline(fullIdea, res.top_keywords || [], customApiKey, customPrompt + languagePrompt);
+      setGeneratingStep('Generating architectural outline...');
+      const languagePrompt = bookDetails.language ? `\n\nCRITICAL: You MUST write the entire outline in ${bookDetails.language}. All titles and section bullet points MUST be in ${bookDetails.language}.` : '';
+      const out = await generateOutline(fullIdea, res.top_keywords || [], customApiKey, customPrompt + languagePrompt, category);
       setOutline(out);
       
       setIdea(fullIdea);
       setViewMode('outline');
     } catch (e: any) {
-      console.error(e);
-      alert("Failed to start project: " + (e.message || "Unknown error"));
+      handleApiError(e, "Failed to start project");
     } finally {
       setIsGenerating(false);
       setGeneratingStep('');
@@ -1783,8 +2288,7 @@ export default function App() {
         setViewMode('chapter');
       }
     } catch (e: any) {
-      console.error(e);
-      alert("Failed to extract chapters: " + (e.message || "Unknown error"));
+      handleApiError(e, "Failed to extract chapters");
     } finally {
       setIsGenerating(false);
       setGeneratingStep('');
@@ -1806,12 +2310,12 @@ export default function App() {
     
     try {
       const conf = await getUserSettings();
-      const customPrompt = conf?.prompts?.[category] || "Write in a clear, practical, encouraging tone.";
+      const customPrompt = conf?.prompts?.[category] || categoryPrompts[category] || DEFAULT_CATEGORY_PROMPTS[category] || "Write in a clear, practical, encouraging tone.";
       
-      let combinedPrompt = `${customPrompt}\n${bookDetails?.globalInstructions ? 'Also explicitly follow these overall instructions for this chapter: ' + bookDetails.globalInstructions : ''}`;
+      let combinedPrompt = `${customPrompt}\n${bookDetails?.globalInstructions ? 'Also explicitly follow these overall instructions for this section: ' + bookDetails.globalInstructions : ''}`;
       
       if (bookDetails?.language) {
-          combinedPrompt += `\n\nCRITICAL: The entire chapter MUST be written in ${bookDetails.language}. Do not use English unless quoting or if strictly necessary.`;
+          combinedPrompt += `\n\nCRITICAL: The entire section/chapter MUST be written in ${bookDetails.language}. Do not use English unless quoting or if strictly necessary.`;
       }
 
       // Build cross-chapter continuity context
@@ -1819,7 +2323,7 @@ export default function App() {
       const preceding = chIndex > 0 ? chapters.slice(0, chIndex) : [];
       const precedingSummaries = preceding
         .filter(c => c.content && c.content.trim())
-        .map(c => continuityMemory.chapterSummaries[c.id] || `Chapter "${c.title}" progressed the storyline/argument.`);
+        .map(c => continuityMemory.chapterSummaries[c.id] || `Section "${c.title}" progressed the storyline/argument.`);
       
       const prevCh = chIndex > 0 ? chapters[chIndex - 1] : null;
       const prevEnding = prevCh?.content ? prevCh.content.trim().substring(Math.max(0, prevCh.content.trim().length - 1200)) : '';
@@ -1839,9 +2343,10 @@ export default function App() {
         outline, 
         chapter.title, 
         customApiKey, 
-        combinedPrompt,
-        abortController.signal,
-        continuityCtx
+        combinedPrompt, 
+        abortController.signal, 
+        continuityCtx, 
+        category
       );
 
       if (abortController.signal.aborted) {
@@ -1881,9 +2386,8 @@ export default function App() {
         console.log("Chapter generation cancelled by user.");
         setChapters(prev => prev.map(c => c.id === chapterId ? { ...c, status: c.content && c.content.trim() ? 'done' : 'idle' } : c));
       } else {
-        console.error("Chapter generation error:", e);
         setChapters(prev => prev.map(c => c.id === chapterId ? { ...c, status: c.content && c.content.trim() ? 'done' : 'idle' } : c));
-        alert("Chapter generation stopped or failed: " + (e.message || "Unknown error") + "\n\nTip: You can click 'Re-generate' anytime to restart AI generation.");
+        handleApiError(e, `Failed to generate ${chapter.title}`);
       }
     } finally {
       if (chapterAbortControllerRef.current === abortController) {
@@ -2041,6 +2545,17 @@ export default function App() {
     setTimeout(() => setHistoryNotice(null), 3500);
   };
 
+  const handleInsertIllustrationIntoChapter = (chapterId: string, markdownSnippet: string) => {
+    pushHistorySnapshot("Inserted Scene Illustration into Chapter");
+    setChapters(prev => prev.map(c => {
+      if (c.id !== chapterId) return c;
+      const updatedContent = c.content ? `${c.content}\n\n${markdownSnippet}\n` : markdownSnippet;
+      return { ...c, content: updatedContent };
+    }));
+    setHistoryNotice("Scene illustration inserted into chapter manuscript!");
+    setTimeout(() => setHistoryNotice(null), 3500);
+  };
+
   const handleExportDocx = async () => {
     setIsGenerating(true);
     setGeneratingStep('manus AI: Formatting Manuscript for Amazon KDP (.docx)...');
@@ -2053,6 +2568,23 @@ export default function App() {
     } catch (e: any) {
       console.error(e);
       alert("DOCX export failed: " + e.message);
+    } finally {
+      setIsGenerating(false);
+      setGeneratingStep('');
+    }
+  };
+
+  const handleExportEpub = async () => {
+    setIsGenerating(true);
+    setGeneratingStep('manus AI: Compiling & Packaging EPUB E-reader File...');
+    
+    await new Promise(resolve => setTimeout(resolve, 100));
+    
+    try {
+      await exportEpubManuscript(bookDetails, chapters, assets.coverUrl);
+    } catch (e: any) {
+      console.error(e);
+      alert("EPUB export failed: " + e.message);
     } finally {
       setIsGenerating(false);
       setGeneratingStep('');
@@ -3433,14 +3965,7 @@ export default function App() {
         setTimeout(() => setHistoryNotice(null), 3500);
       }
     } catch (e: any) {
-      const msg = e.message || "Unknown error";
-      if (msg.includes("not valid") || msg.includes("API_KEY_INVALID")) {
-        alert("Magic Fill failed: The API key is invalid. Please check your Gemini API key in Settings (bottom left gear icon).");
-      } else if (msg.includes("quota") || msg.includes("429")) {
-        alert("Magic Fill failed: Rate limit exceeded. Please wait a moment and try again.");
-      } else {
-        alert("Failed to suggest metadata: " + msg);
-      }
+      handleApiError(e, "Failed to optimize metadata");
     } finally {
       setIsGenerating(false);
       setGeneratingStep('');
@@ -3512,6 +4037,38 @@ export default function App() {
   const handleRenameChapter = (id: string, newTitle: string) => {
     pushHistorySnapshot(`Before renaming chapter to "${newTitle}"`);
     setChapters(prev => prev.map(c => c.id === id ? { ...c, title: newTitle } : c));
+  };
+
+  const handleMoveChapter = (index: number, direction: 'up' | 'down') => {
+    const targetIndex = direction === 'up' ? index - 1 : index + 1;
+    if (targetIndex < 0 || targetIndex >= chapters.length) return;
+    pushHistorySnapshot(`Before moving chapter "${chapters[index].title}"`);
+    setChapters(prev => {
+      const next = [...prev];
+      const [moved] = next.splice(index, 1);
+      next.splice(targetIndex, 0, moved);
+      return next;
+    });
+  };
+
+  const handleDragStartChapter = (index: number) => {
+    setDraggedChapterIndex(index);
+  };
+
+  const handleDragOverChapter = (e: React.DragEvent) => {
+    e.preventDefault();
+  };
+
+  const handleDropChapter = (index: number) => {
+    if (draggedChapterIndex === null || draggedChapterIndex === index) return;
+    pushHistorySnapshot(`Before reordering chapters via drag-and-drop`);
+    setChapters(prev => {
+      const next = [...prev];
+      const [moved] = next.splice(draggedChapterIndex, 1);
+      next.splice(index, 0, moved);
+      return next;
+    });
+    setDraggedChapterIndex(null);
   };
 
   const handleAddAuthorPage = () => {
@@ -3790,7 +4347,14 @@ export default function App() {
       }));
     } catch (error: any) {
       console.error(error);
-      const errorMessage = error?.message || "Sorry, an error occurred.";
+      let errorMessage = error?.message || "Sorry, an error occurred.";
+      if (typeof errorMessage === 'string' && (errorMessage.includes('<!DOCTYPE html>') || errorMessage.includes('<html'))) {
+        if (errorMessage.includes('PayloadTooLargeError') || errorMessage.includes('entity too large')) {
+          errorMessage = "Payload Too Large: The request payload exceeded the server body size limit. Please try sending shorter context or smaller attachments.";
+        } else {
+          errorMessage = "Server Error: The proxy server returned an error page. Please try again.";
+        }
+      }
       setChats(prev => ({
         ...prev,
         [docId]: [...updatedHistory, { role: 'model', text: `Error: ${errorMessage}` }]
@@ -4318,12 +4882,12 @@ export default function App() {
             </button>
             <button
               onClick={handleCreateNewProject}
-              title={sidebarCollapsed ? "New Book" : undefined}
+              title={sidebarCollapsed ? "New Manuscript" : undefined}
               className={`w-full flex items-center ${sidebarCollapsed ? 'justify-center px-2 py-2.5' : 'justify-between px-3 py-2'} rounded-lg text-sm font-medium transition-colors text-zinc-600 hover:bg-zinc-100`}
             >
               <div className={`flex items-center ${sidebarCollapsed ? 'justify-center' : 'gap-3'}`}>
                 <Plus className="w-4 h-4 shrink-0" />
-                {!sidebarCollapsed && <span>New Book</span>}
+                {!sidebarCollapsed && <span>New Manuscript</span>}
               </div>
             </button>
             <button
@@ -4418,6 +4982,23 @@ export default function App() {
             >
               <AlignLeft className="w-4 h-4 text-indigo-600 shrink-0" />
               {!sidebarCollapsed && <span>Table of Contents</span>}
+            </button>
+            <button
+              onClick={() => { setViewMode('visual_designer'); setMobileMenuOpen(false); }}
+              disabled={!projectId}
+              title={sidebarCollapsed ? "Visual Designer & Illustrations" : undefined}
+              className={`w-full flex items-center ${sidebarCollapsed ? 'justify-center px-2 py-2.5' : 'gap-3 px-3 py-2'} rounded-lg text-sm font-medium transition-colors ${
+                viewMode === 'visual_designer' ? 'bg-pink-50 text-pink-800 font-bold' : 
+                !projectId ? 'opacity-50 cursor-not-allowed text-zinc-400' : 'text-zinc-700 hover:bg-pink-50/60'
+              }`}
+            >
+              <ImageIcon className="w-4 h-4 text-pink-600 shrink-0" />
+              {!sidebarCollapsed && (
+                <div className="flex items-center justify-between w-full">
+                  <span>Visual Designer</span>
+                  <span className="text-[9px] font-extrabold uppercase px-1.5 py-0.5 rounded bg-pink-100 text-pink-700">Illustrate</span>
+                </div>
+              )}
             </button>
             <button
               onClick={() => { setViewMode('assets'); setAssetsSubTab('cover'); setMobileMenuOpen(false); }}
@@ -4540,14 +5121,28 @@ export default function App() {
                   {chapters.map((chapter, idx) => {
                     const isAuthorPage = chapter.title.toLowerCase().includes('about the author');
                     return (
-                      <div key={chapter.id} className="group relative">
+                      <div 
+                        key={chapter.id} 
+                        draggable
+                        onDragStart={() => handleDragStartChapter(idx)}
+                        onDragOver={handleDragOverChapter}
+                        onDrop={() => handleDropChapter(idx)}
+                        className={`group relative flex items-center ${draggedChapterIndex === idx ? 'opacity-40 border border-dashed border-indigo-400 rounded-lg' : ''}`}
+                      >
+                        <div 
+                          className="pl-1.5 pr-0.5 text-zinc-300 hover:text-zinc-500 cursor-grab active:cursor-grabbing opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0"
+                          title="Drag to reorder chapter"
+                        >
+                          <GripVertical className="w-3.5 h-3.5" />
+                        </div>
+
                         <button
                           onClick={() => {
                             setActiveChapterId(chapter.id);
                             setViewMode('chapter');
                             setMobileMenuOpen(false);
                           }}
-                          className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-sm transition-colors text-left pr-14 cursor-pointer ${
+                          className={`w-full flex items-center justify-between px-2 py-2 rounded-lg text-sm transition-colors text-left pr-20 cursor-pointer ${
                             viewMode === 'chapter' && activeChapterId === chapter.id
                               ? 'bg-indigo-50 text-indigo-700 font-medium'
                               : isAuthorPage ? 'bg-amber-50/70 text-amber-900 hover:bg-amber-100/70' : 'text-zinc-600 hover:bg-zinc-100'
@@ -4566,7 +5161,31 @@ export default function App() {
                           {chapter.status === 'done' && <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0 ml-1" />}
                           {chapter.status === 'generating' && <Loader2 className="w-3.5 h-3.5 text-indigo-500 animate-spin flex-shrink-0 ml-1" />}
                         </button>
-                      <div className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-1 opacity-80 sm:opacity-0 group-hover:opacity-100 transition-opacity pr-1">
+                      <div className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-0.5 opacity-80 sm:opacity-0 group-hover:opacity-100 transition-opacity pr-1 bg-white/90 backdrop-blur-xs rounded-lg p-0.5 shadow-2xs">
+                        {idx > 0 && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleMoveChapter(idx, 'up');
+                            }}
+                            className="p-0.5 hover:bg-zinc-100 rounded text-zinc-400 hover:text-indigo-600 transition-colors cursor-pointer"
+                            title="Move Chapter Up"
+                          >
+                            <ChevronUp className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                        {idx < chapters.length - 1 && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleMoveChapter(idx, 'down');
+                            }}
+                            className="p-0.5 hover:bg-zinc-100 rounded text-zinc-400 hover:text-indigo-600 transition-colors cursor-pointer"
+                            title="Move Chapter Down"
+                          >
+                            <ChevronDown className="w-3.5 h-3.5" />
+                          </button>
+                        )}
                         {chapter.status === 'generating' ? (
                           <button
                             onClick={(e) => {
@@ -4684,9 +5303,12 @@ export default function App() {
           <div className="flex items-center gap-2">
             {/* BYOK API Key Quick Button */}
             <button
-              onClick={() => setIsUserSettingsOpen(true)}
+              onClick={() => {
+                setApiKeyModalMessage(null);
+                setIsApiKeyModalOpen(true);
+              }}
               className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-xl transition-all shadow-2xs cursor-pointer ${
-                localStorage.getItem('user_custom_gemini_key') || localStorage.getItem('gemini_api_key')
+                customApiKey || localStorage.getItem('user_custom_gemini_key') || localStorage.getItem('gemini_api_key')
                   ? 'bg-blue-50 text-blue-800 border border-blue-200/80 hover:bg-blue-100'
                   : 'bg-amber-500 text-white hover:bg-amber-600 animate-pulse'
               }`}
@@ -4694,7 +5316,7 @@ export default function App() {
             >
               <Key className="w-3.5 h-3.5" />
               <span className="hidden sm:inline">
-                {localStorage.getItem('user_custom_gemini_key') || localStorage.getItem('gemini_api_key') ? 'BYOK Key Active' : 'Set Gemini Key (BYOK)'}
+                {customApiKey || localStorage.getItem('user_custom_gemini_key') || localStorage.getItem('gemini_api_key') ? 'BYOK Key Active' : 'Set Gemini Key (BYOK)'}
               </span>
             </button>
 
@@ -4889,12 +5511,20 @@ export default function App() {
 
             {viewMode === 'library' && (
               <div className="space-y-6">
-                <div className="flex items-center justify-between mb-8">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
                   <div>
                     <h2 className="text-2xl font-bold text-zinc-900">Your Bookshelf</h2>
-                    <p className="text-sm text-zinc-500 mt-1">Manage all your generated projects. Projects save automatically.</p>
+                    <p className="text-sm text-zinc-500 mt-1">Manage all your manuscript projects. Changes save automatically.</p>
                   </div>
-                  <div className="flex items-center gap-2.5">
+                  <div className="flex items-center flex-wrap gap-2.5">
+                    <button
+                      onClick={handleOpenTrashModal}
+                      className="flex items-center gap-1.5 bg-zinc-100 hover:bg-zinc-200 text-zinc-700 px-3.5 py-2.5 rounded-xl text-sm font-semibold transition-colors cursor-pointer border border-zinc-200"
+                      title="View deleted manuscripts & restore them"
+                    >
+                      <Trash2 className="w-4 h-4 text-zinc-500" />
+                      <span>Trash Bin</span>
+                    </button>
                     <button
                       onClick={handleOpenMdImportModal}
                       className="flex items-center gap-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 px-4 py-2.5 rounded-xl text-sm font-semibold transition-colors cursor-pointer shadow-2xs"
@@ -4905,7 +5535,7 @@ export default function App() {
                       onClick={handleCreateNewProject}
                       className="flex items-center gap-2 bg-indigo-600 text-white px-4 py-2.5 rounded-xl text-sm font-semibold hover:bg-indigo-700 transition-colors shadow-xs"
                     >
-                      <Plus className="w-4 h-4" /> Start New Book
+                      <Plus className="w-4 h-4" /> Start New Manuscript
                     </button>
                   </div>
                 </div>
@@ -4913,14 +5543,14 @@ export default function App() {
                 {savedProjects.length === 0 ? (
                   <div className="flex flex-col items-center justify-center p-12 bg-white rounded-2xl border border-zinc-200 border-dashed text-center">
                     <BookOpen className="w-12 h-12 text-zinc-300 mb-4" />
-                    <h3 className="text-lg font-medium text-zinc-900">No books yet</h3>
-                    <p className="text-zinc-500 mt-1 mb-6 max-w-sm">Create your first project and it will be safely saved in your browser storage.</p>
+                    <h3 className="text-lg font-medium text-zinc-900">No manuscripts yet</h3>
+                    <p className="text-zinc-500 mt-1 mb-6 max-w-sm">Create your first manuscript project and it will be safely saved in your browser storage.</p>
                     <div className="flex items-center gap-3">
                       <button
                         onClick={handleCreateNewProject}
                         className="text-indigo-600 bg-indigo-50 hover:bg-indigo-100 font-semibold px-4 py-2 rounded-xl transition-colors"
                       >
-                        Create Project
+                        Create Manuscript
                       </button>
                       <button
                         onClick={handleOpenMdImportModal}
@@ -4933,14 +5563,16 @@ export default function App() {
                   </div>
                 ) : (
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    {savedProjects.sort((a, b) => b.updatedAt - a.updatedAt).map(proj => (
+                    {[...savedProjects].sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0)).map(proj => (
                       <div 
                         key={proj.id} 
                         className={`group bg-white rounded-2xl border shadow-sm hover:shadow-md transition-all cursor-pointer relative flex flex-col h-[210px] overflow-hidden ${projectId === proj.id ? 'border-indigo-400 ring-1 ring-indigo-400' : 'border-zinc-200 hover:border-zinc-300'}`}
                         onClick={() => handleOpenProject(proj.id)}
                       >
                         <div className="p-5 flex-1 flex flex-col">
-                          <h3 className="font-semibold text-zinc-900 text-lg leading-tight line-clamp-2 mb-2">{proj.title}</h3>
+                          <div className="flex items-start justify-between gap-2 mb-2">
+                            <h3 className="font-semibold text-zinc-900 text-lg leading-tight line-clamp-2">{proj.title}</h3>
+                          </div>
                           <div className="mt-auto flex items-center justify-between">
                             <div>
                               <p className="text-xs text-zinc-500">
@@ -4968,9 +5600,9 @@ export default function App() {
                           <button
                             onClick={(e) => handleDeleteProject(e, proj.id)}
                             className="p-1.5 bg-red-50 text-red-600 rounded-md hover:bg-red-100 transition-colors"
-                            title="Delete Project"
+                            title="Move to Trash Bin"
                           >
-                            <X className="w-4 h-4" />
+                            <Trash2 className="w-4 h-4" />
                           </button>
                         </div>
                       </div>
@@ -4985,7 +5617,7 @@ export default function App() {
                 <div className="bg-white p-6 rounded-2xl border border-zinc-200 shadow-sm relative overflow-hidden">
                   <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-50 rounded-bl-full -z-10"></div>
                   <h3 className="text-xl font-bold mb-1 text-zinc-900">Define Your Manuscript</h3>
-                  <p className="text-sm text-zinc-500 mb-6">Choose a category and write a detailed prompt for your book idea.</p>
+                  <p className="text-sm text-zinc-500 mb-6">Choose a category and write a detailed prompt or brief for your project.</p>
                   
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-5">
                     <div>
@@ -4994,7 +5626,22 @@ export default function App() {
                       </label>
                       <select
                         value={category}
-                        onChange={(e) => setCategory(e.target.value as Category)}
+                        onChange={(e) => {
+                          const newCat = e.target.value as Category;
+                          setCategory(newCat);
+                          if (newCat === 'children_stories') {
+                            setBookDetails(prev => ({
+                              ...prev,
+                              trimSize: '8.5x11',
+                              subCategory: prev.subCategory || 'picture_books'
+                            }));
+                          } else if (BOOK_SUBCATEGORIES[newCat] && BOOK_SUBCATEGORIES[newCat].length > 0) {
+                            setBookDetails(prev => ({
+                              ...prev,
+                              subCategory: BOOK_SUBCATEGORIES[newCat][0].id
+                            }));
+                          }
+                        }}
                         disabled={isGenerating}
                         className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent font-medium text-zinc-800"
                       >
@@ -5020,14 +5667,73 @@ export default function App() {
                     </div>
                   </div>
 
+                  {/* Subcategory Selector for Book Categories */}
+                  {BOOK_SUBCATEGORIES[category] && BOOK_SUBCATEGORIES[category].length > 0 && (
+                    <div className="mb-5 p-4 bg-indigo-50/50 rounded-2xl border border-indigo-100">
+                      <div className="flex items-center justify-between mb-2.5">
+                        <label className="block text-xs font-bold text-indigo-950 uppercase tracking-wider">
+                          {category === 'children_stories' ? "Children's Story Subcategory & Age Target" : "Book Subcategory"}
+                        </label>
+                        <span className="text-[11px] text-indigo-600 font-semibold">
+                          Specialized Literary Framework
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+                        {BOOK_SUBCATEGORIES[category].map(sub => {
+                          const isSelected = (bookDetails.subCategory || BOOK_SUBCATEGORIES[category][0].id) === sub.id;
+                          return (
+                            <button
+                              key={sub.id}
+                              type="button"
+                              onClick={() => setBookDetails(prev => ({ ...prev, subCategory: sub.id }))}
+                              className={`text-left p-3 rounded-xl border transition-all cursor-pointer ${
+                                isSelected
+                                  ? 'bg-white border-indigo-500 shadow-xs ring-2 ring-indigo-500/20'
+                                  : 'bg-white/70 hover:bg-white border-indigo-100 text-zinc-700 hover:border-indigo-300'
+                              }`}
+                            >
+                              <div className="flex items-center justify-between gap-1 mb-1">
+                                <span className={`text-xs font-bold ${isSelected ? 'text-indigo-900' : 'text-zinc-800'}`}>
+                                  {sub.label}
+                                </span>
+                                {sub.targetAge && (
+                                  <span className="text-[9px] font-extrabold uppercase px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-700 whitespace-nowrap">
+                                    {sub.targetAge}
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-[11px] text-zinc-500 leading-tight">
+                                {sub.desc}
+                              </p>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
                   <div className="mb-6">
                     <label className="block text-sm font-semibold text-zinc-800 mb-2">
-                      What is your book about?
+                      What is your {category === 'sales_copy' ? 'sales copy' : category === 'white_paper' ? 'white paper' : category === 'web_copy' ? 'web copy' : category === 'children_stories' ? "children's story" : 'manuscript'} about?
                     </label>
                     <textarea
                       rows={5}
                       className="w-full rounded-xl border border-zinc-200 focus:border-indigo-500 focus:ring-indigo-500 p-4 bg-zinc-50 resize-y shadow-sm mb-8"
-                      placeholder="e.g., A comprehensive guide to intermittent fasting for seniors..."
+                      placeholder={
+                        category === 'sales_copy'
+                          ? 'e.g., A high-converting direct-response sales letter for an enterprise B2B SaaS platform targeting Chief Marketing Officers...'
+                          : category === 'white_paper'
+                          ? 'e.g., An authoritative executive white paper exploring zero-trust cybersecurity architectures and AI compliance for financial institutions...'
+                          : category === 'web_copy'
+                          ? 'e.g., A complete high-converting landing page and website copy suite for a modern productivity and workflow automation tool...'
+                          : category === 'children_stories'
+                          ? 'e.g., An enchanting bedtime story about Barnaby, a curious little hedgehog who loses his prickly quills and discovers that true bravery comes from kindness. Includes soothing rhythms, playful animal friends, and vivid illustration cues...'
+                          : category === 'fiction'
+                          ? 'e.g., A gripping psychological thriller set in an isolated research station in Svalbard...'
+                          : category === 'guides'
+                          ? 'e.g., A step-by-step masterclass manual on mastering cloud infrastructure and Kubernetes for DevOps engineers...'
+                          : 'e.g., A comprehensive non-fiction publication exploring cognitive behavioral frameworks for peak performance...'
+                      }
                       value={idea}
                       onChange={(e) => setIdea(e.target.value)}
                       disabled={isGenerating}
@@ -5327,6 +6033,52 @@ export default function App() {
                     </div>
                     </div>
 
+                    {/* Book & Story Subcategory */}
+                    {BOOK_SUBCATEGORIES[category] && BOOK_SUBCATEGORIES[category].length > 0 && (
+                      <div className="pt-6 border-t border-zinc-100">
+                        <div className="flex items-center justify-between mb-3">
+                          <div>
+                            <label className="text-sm font-semibold text-zinc-800 flex items-center gap-2">
+                              <BookOpen className="w-4 h-4 text-indigo-600" />
+                              {category === 'children_stories' ? "Children's Story Age Bracket & Subcategory" : "Book Subcategory"}
+                            </label>
+                            <p className="text-xs text-zinc-500">Fine-tunes the tone, vocabulary pacing, and story structure for your target audience.</p>
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                          {BOOK_SUBCATEGORIES[category].map(sub => {
+                            const isSelected = (bookDetails.subCategory || BOOK_SUBCATEGORIES[category][0].id) === sub.id;
+                            return (
+                              <button
+                                key={sub.id}
+                                type="button"
+                                onClick={() => setBookDetails(prev => ({ ...prev, subCategory: sub.id }))}
+                                className={`text-left p-3.5 rounded-xl border transition-all cursor-pointer ${
+                                  isSelected
+                                    ? 'bg-indigo-50/70 border-indigo-500 shadow-2xs ring-2 ring-indigo-500/20'
+                                    : 'bg-zinc-50 hover:bg-white border-zinc-200 text-zinc-700 hover:border-zinc-300'
+                                }`}
+                              >
+                                <div className="flex items-center justify-between gap-1 mb-1">
+                                  <span className={`text-xs font-bold ${isSelected ? 'text-indigo-900' : 'text-zinc-800'}`}>
+                                    {sub.label}
+                                  </span>
+                                  {sub.targetAge && (
+                                    <span className="text-[9px] font-extrabold uppercase px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-700 whitespace-nowrap">
+                                      {sub.targetAge}
+                                    </span>
+                                  )}
+                                </div>
+                                <p className="text-[11px] text-zinc-500 leading-tight">
+                                  {sub.desc}
+                                </p>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+
                     <div className="pt-6 border-t border-zinc-100">
                       <label className="block text-sm font-semibold text-zinc-800 mb-2 flex items-center gap-2">
                         <ImageIcon className="w-4 h-4" /> Cover Inspiration (Optional)
@@ -5529,6 +6281,10 @@ export default function App() {
                         setActiveChapterId(chapter.id);
                         setViewMode('humanizer');
                       }}
+                      onIllustrate={() => {
+                        setActiveChapterId(chapter.id);
+                        setViewMode('visual_designer');
+                      }}
                       onShowVersionHistory={() => {
                         setVersionHistoryChapterId(chapter.id);
                         setShowVersionHistoryModal(true);
@@ -5641,6 +6397,31 @@ export default function App() {
                   setViewMode('chapter');
                 }}
                 onInsertTocChapter={handleInsertTocChapter}
+              />
+            )}
+
+            {viewMode === 'visual_designer' && (
+              <VisualDesignerStudio
+                chapters={chapters}
+                activeChapterId={activeChapterId}
+                bookTitle={bookDetails.title}
+                bookCategory={category}
+                customApiKey={customApiKey}
+                characterBible={characterBible}
+                chapterIllustrations={chapterIllustrations}
+                onUpdateCharacterBible={(characters) => {
+                  setCharacterBible(characters);
+                  pushHistorySnapshot('Updated Character Bible');
+                }}
+                onUpdateIllustrations={(illustrations) => {
+                  setChapterIllustrations(illustrations);
+                  pushHistorySnapshot('Updated Chapter Illustrations');
+                }}
+                onInsertIllustrationIntoChapter={handleInsertIllustrationIntoChapter}
+                onNavigateToChapter={(chId) => {
+                  setActiveChapterId(chId);
+                  setViewMode('chapter');
+                }}
               />
             )}
 
@@ -5987,6 +6768,23 @@ export default function App() {
                                 <span className="bg-emerald-600 text-white text-[9px] font-bold px-1.5 py-0.5 rounded uppercase">Recommended for KDP</span>
                               </div>
                               <span className="text-[11px] text-emerald-700 font-medium">Direct Upload to KDP "Upload Manuscript" button</span>
+                            </div>
+                          </button>
+
+                          <button 
+                            onClick={handleExportEpub}
+                            disabled={isGenerating}
+                            className="flex items-center gap-4 p-4 border border-purple-300 hover:border-purple-500 bg-purple-50/60 hover:bg-purple-50 rounded-2xl transition-all group cursor-pointer shadow-2xs relative"
+                          >
+                            <div className="w-11 h-11 bg-purple-100 text-purple-700 rounded-xl flex items-center justify-center flex-shrink-0">
+                              <Book className="w-5 h-5" />
+                            </div>
+                            <div className="text-left">
+                              <div className="flex items-center gap-2">
+                                <strong className="text-sm text-purple-950 block font-bold">Standard EPUB (.epub)</strong>
+                                <span className="bg-purple-600 text-white text-[9px] font-bold px-1.5 py-0.5 rounded uppercase">Kindle & Apple Books</span>
+                              </div>
+                              <span className="text-[11px] text-purple-700 font-medium">EPUB3 Compliant E-Reader Format</span>
                             </div>
                           </button>
 
@@ -7808,31 +8606,79 @@ export default function App() {
 
                 {/* Category Prompts */}
                 <div className="pt-6 border-t border-zinc-100">
-                  <h4 className="text-sm font-bold text-zinc-900 uppercase tracking-wider flex items-center justify-between mb-4">
-                    Category System Prompts
-                    <span className="bg-indigo-100 text-indigo-700 text-[10px] px-2 py-0.5 rounded-full normal-case">manus config</span>
+                  <h4 className="text-sm font-bold text-zinc-900 uppercase tracking-wider flex items-center justify-between mb-2">
+                    <span>Category AI Training & System Prompts</span>
+                    <span className="bg-indigo-100 text-indigo-700 text-[10px] px-2.5 py-0.5 rounded-full font-bold">manus engine</span>
                   </h4>
-                  <p className="text-xs text-zinc-500 mb-6">Define the specific rules, tone, and system prompt the AI should follow when generating chapters for each specific manuscript category.</p>
+                  <p className="text-xs text-zinc-500 mb-6">
+                    Fine-tune and train the specialized system instructions, tone frameworks, and structural rules the AI model executes for each manuscript and copy category.
+                  </p>
 
                   <div className="space-y-6">
                     {Object.entries(CATEGORIES).map(([catKey, label]) => {
+                      const typedKey = catKey as Category;
+                      const currentVal = categoryPrompts[typedKey] || DEFAULT_CATEGORY_PROMPTS[typedKey] || "";
+                      const isCustomized = categoryPrompts[typedKey] && categoryPrompts[typedKey] !== DEFAULT_CATEGORY_PROMPTS[typedKey];
+                      
+                      const personaTag = {
+                        sales_copy: "Direct-Response & Conversion Psychology",
+                        white_paper: "B2B Enterprise & Institutional Research",
+                        web_copy: "CRO & Digital UX Landing Architecture",
+                        children_stories: "Children's Storytelling, Literacy & Illustration Cues",
+                        non_fiction: "Thought Leadership & Case Frameworks",
+                        fiction: "Literary Fiction & Narrative Immersion",
+                        guides: "Action Checklists & Instructional Manuals"
+                      }[typedKey];
+
                       return (
-                        <div key={catKey}>
-                          <label className="block text-sm font-semibold text-zinc-800 mb-2 flex items-center gap-2">
-                            {label}
-                          </label>
+                        <div key={catKey} className="p-4 bg-zinc-50/80 rounded-2xl border border-zinc-200/80 space-y-2.5">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <div className="flex items-center gap-2">
+                              <label className="text-sm font-bold text-zinc-900">
+                                {label}
+                              </label>
+                              {personaTag && (
+                                <span className="text-[10px] font-semibold bg-white text-zinc-600 px-2 py-0.5 rounded-md border border-zinc-200">
+                                  {personaTag}
+                                </span>
+                              )}
+                              {isCustomized && (
+                                <span className="text-[9px] font-bold bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded">
+                                  Customized
+                                </span>
+                              )}
+                            </div>
+                            
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const defaultVal = DEFAULT_CATEGORY_PROMPTS[typedKey];
+                                setCategoryPrompts(prev => {
+                                  const next = { ...prev, [typedKey]: defaultVal };
+                                  saveUserSettings({ prompts: next });
+                                  return next;
+                                });
+                              }}
+                              className="text-[11px] font-medium text-indigo-600 hover:text-indigo-800 transition-colors cursor-pointer"
+                            >
+                              Reset to Default Training
+                            </button>
+                          </div>
+
                           <textarea
-                            className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent resize-y"
+                            className="w-full bg-white border border-zinc-200 rounded-xl px-3.5 py-2.5 text-xs text-zinc-800 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent resize-y leading-relaxed"
                             rows={3}
-                            placeholder={`Enter formatting rules for ${label} (e.g. "Always use academic tone...")`}
-                            defaultValue={"You are an expert ghostwriter. Output strictly formatted markdown without filler."}
+                            value={currentVal}
+                            placeholder={`Enter AI system instructions and rules for ${label}...`}
                             onChange={(e) => {
-                               getUserSettings().then((s) => {
-                                 const currentPrompts = s?.prompts || {};
-                                 saveUserSettings({ prompts: { ...currentPrompts, [catKey]: e.target.value } });
-                               });
+                              const newVal = e.target.value;
+                              setCategoryPrompts(prev => {
+                                const next = { ...prev, [typedKey]: newVal };
+                                saveUserSettings({ prompts: next });
+                                return next;
+                              });
                             }}
-                          ></textarea>
+                          />
                         </div>
                       );
                     })}
@@ -8634,18 +9480,214 @@ export default function App() {
       {!isSupportAssistantOpen && (
         <button
           onClick={() => setIsSupportAssistantOpen(true)}
-          className="fixed bottom-5 right-5 z-40 p-3.5 bg-gradient-to-r from-blue-700 via-indigo-700 to-slate-900 text-white rounded-full shadow-2xl hover:scale-105 active:scale-95 transition-all flex items-center gap-2.5 border border-white/20 group cursor-pointer"
-          title="Open AI Support Assistant Expert"
+          className="fixed bottom-4 right-3 z-40 w-11 h-11 bg-gradient-to-br from-blue-600 via-indigo-600 to-slate-900 text-white rounded-full shadow-xl hover:shadow-2xl hover:scale-110 active:scale-95 transition-all flex items-center justify-center border border-white/20 group cursor-pointer"
+          title="Need Help? Ask AI Expert"
+          aria-label="Need Help? Ask AI Expert"
         >
-          <div className="relative">
-            <Bot className="w-5 h-5 text-blue-200 group-hover:rotate-12 transition-transform" />
+          <div className="relative flex items-center justify-center">
+            <Bot className="w-5 h-5 text-blue-100 group-hover:rotate-12 transition-transform" />
             <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-emerald-400 rounded-full border-2 border-zinc-900 animate-ping" />
             <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-emerald-400 rounded-full border-2 border-zinc-900" />
           </div>
-          <span className="text-xs font-extrabold pr-1 hidden sm:inline tracking-tight">
-            Need Help? Ask AI Expert
-          </span>
         </button>
+      )}
+
+      {/* Dedicated Google Gemini API Key Setup & BYOK Modal */}
+      <ApiKeyRequiredModal
+        isOpen={isApiKeyModalOpen}
+        onClose={() => setIsApiKeyModalOpen(false)}
+        initialKey={customApiKey}
+        errorMessage={apiKeyModalMessage}
+        onKeySaved={(newKey) => {
+          setCustomApiKey(newKey);
+          saveUserSettings({ customApiKey: newKey });
+          setHistoryNotice("Google Gemini API Key successfully saved and activated!");
+          setTimeout(() => setHistoryNotice(null), 4000);
+        }}
+      />
+
+      {/* Floating Undo Delete Notification */}
+      {undoDeleteToast && (
+        <div className="fixed bottom-6 left-6 z-50 bg-zinc-950 text-white px-4 py-3 rounded-2xl shadow-2xl border border-zinc-800 flex items-center gap-3 animate-in slide-in-from-bottom-5">
+          <div className="flex items-center gap-2">
+            <Trash2 className="w-4 h-4 text-red-400" />
+            <span className="text-xs">
+              Moved <strong>"{undoDeleteToast.title}"</strong> to Trash Bin
+            </span>
+          </div>
+          <button
+            onClick={() => handleUndoDelete(undoDeleteToast.id)}
+            className="px-3 py-1 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-bold transition-colors cursor-pointer flex items-center gap-1"
+          >
+            <RotateCcw className="w-3.5 h-3.5" />
+            <span>Undo</span>
+          </button>
+          <button
+            onClick={() => setUndoDeleteToast(null)}
+            className="text-zinc-400 hover:text-white p-0.5"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
+
+      {/* Manuscript Safe Deletion Confirmation Modal */}
+      {projectToDelete && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl border border-zinc-200 shadow-2xl max-w-md w-full p-6 space-y-4 relative">
+            <div className="flex items-center justify-between border-b border-zinc-100 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 bg-red-50 text-red-600 rounded-xl">
+                  <Trash2 className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-zinc-900">Move Manuscript to Trash?</h3>
+                  <p className="text-xs text-zinc-500">Safely store in Trash Bin with 1-click restore</p>
+                </div>
+              </div>
+              <button 
+                onClick={() => setProjectToDelete(null)}
+                className="p-1.5 text-zinc-400 hover:text-zinc-600 rounded-xl hover:bg-zinc-100 transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-4 bg-zinc-50 rounded-xl border border-zinc-200 space-y-2">
+              <h4 className="font-bold text-zinc-900 text-sm leading-snug">{projectToDelete.title}</h4>
+              <div className="flex flex-wrap items-center gap-2 text-xs text-zinc-600">
+                <span className="bg-zinc-200/80 px-2 py-0.5 rounded font-medium capitalize">
+                  {projectToDelete.category?.replace(/_/g, ' ') || 'General'}
+                </span>
+                <span>•</span>
+                <span>{projectToDelete.chapterCount || 0} chapters</span>
+                <span>•</span>
+                <span>{(projectToDelete.wordCount || 0).toLocaleString()} words</span>
+              </div>
+            </div>
+
+            {(projectToDelete.chapterCount || 0) > 0 || (projectToDelete.wordCount || 0) > 0 ? (
+              <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-900 flex items-start gap-2">
+                <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                <p>
+                  This manuscript contains drafted content ({projectToDelete.chapterCount} chapters, {(projectToDelete.wordCount || 0).toLocaleString()} words). It will be safely moved to your <strong>Trash Bin</strong> where you can restore it at any time.
+                </p>
+              </div>
+            ) : (
+              <p className="text-xs text-zinc-500">
+                This empty draft will be moved to your Trash Bin.
+              </p>
+            )}
+
+            <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-zinc-100">
+              <button
+                onClick={() => setProjectToDelete(null)}
+                className="px-4 py-2 text-zinc-700 bg-zinc-100 hover:bg-zinc-200 rounded-xl text-xs font-semibold transition-colors cursor-pointer"
+              >
+                Keep Manuscript
+              </button>
+              <button
+                onClick={handleConfirmMoveToTrash}
+                className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-semibold transition-colors flex items-center gap-1.5 shadow-xs cursor-pointer"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                Move to Trash Bin
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Trash Bin Management & Restore Modal */}
+      {showTrashModal && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-white rounded-2xl border border-zinc-200 shadow-2xl max-w-2xl w-full p-6 space-y-4 relative my-8">
+            <div className="flex items-center justify-between border-b border-zinc-100 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 bg-zinc-100 text-zinc-700 rounded-xl">
+                  <Trash2 className="w-5 h-5 text-zinc-600" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-zinc-900">Manuscript Trash Bin</h3>
+                  <p className="text-xs text-zinc-500">Restore deleted manuscripts to your bookshelf or permanently purge them.</p>
+                </div>
+              </div>
+              <button 
+                onClick={() => setShowTrashModal(false)} 
+                className="p-1.5 text-zinc-400 hover:text-zinc-600 rounded-xl hover:bg-zinc-100 transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {trashList.length === 0 ? (
+              <div className="text-center py-12 bg-zinc-50 rounded-xl border border-dashed border-zinc-200">
+                <Trash2 className="w-10 h-10 text-zinc-300 mx-auto mb-2" />
+                <p className="text-sm font-semibold text-zinc-700">Trash Bin is Empty</p>
+                <p className="text-xs text-zinc-400 mt-0.5">Any manuscripts you delete will appear here so you never lose work.</p>
+              </div>
+            ) : (
+              <div className="space-y-3 max-h-[400px] overflow-y-auto pr-1">
+                {trashList.map((item) => (
+                  <div 
+                    key={item.id}
+                    className="p-4 bg-zinc-50 border border-zinc-200 rounded-xl flex items-center justify-between gap-4 hover:bg-zinc-100/70 transition-colors"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <h4 className="font-bold text-zinc-900 text-sm truncate">{item.title}</h4>
+                      <div className="flex flex-wrap items-center gap-2 text-[11px] text-zinc-500 mt-1">
+                        <span className="capitalize">{item.category?.replace(/_/g, ' ') || 'Manuscript'}</span>
+                        <span>•</span>
+                        <span>{item.chapterCount || 0} chapters</span>
+                        <span>•</span>
+                        <span>{(item.wordCount || 0).toLocaleString()} words</span>
+                        <span>•</span>
+                        <span>Deleted {new Date(item.deletedAt).toLocaleDateString()}</span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button
+                        onClick={() => handleRestoreFromTrashModal(item.id)}
+                        className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold transition-colors flex items-center gap-1 cursor-pointer shadow-2xs"
+                        title="Restore this manuscript to your active bookshelf"
+                      >
+                        <RotateCcw className="w-3.5 h-3.5" />
+                        <span>Restore</span>
+                      </button>
+                      <button
+                        onClick={() => handlePermanentDeleteFromTrash(item.id, item.title)}
+                        className="p-1.5 text-zinc-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
+                        title="Permanently delete forever"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div className="flex items-center justify-between pt-3 border-t border-zinc-100">
+              {trashList.length > 0 ? (
+                <button
+                  onClick={handleEmptyAllTrash}
+                  className="text-xs text-red-600 hover:text-red-700 font-semibold flex items-center gap-1 cursor-pointer"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  Empty Entire Trash Bin
+                </button>
+              ) : <div />}
+
+              <button
+                onClick={() => setShowTrashModal(false)}
+                className="px-4 py-2 bg-zinc-900 hover:bg-zinc-800 text-white text-xs font-semibold rounded-xl transition-colors cursor-pointer"
+              >
+                Close Trash Bin
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
     </div>

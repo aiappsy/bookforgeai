@@ -611,6 +611,231 @@ export async function exportToDocx(bookDetails: any, chapters: Chapter[], coverU
   URL.revokeObjectURL(url);
 }
 
+function escapeXml(unsafe: string): string {
+  if (!unsafe) return "";
+  return unsafe
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;");
+}
+
+export async function createEpubBlob(bookDetails: any, chapters: Chapter[], coverUrl?: string | null): Promise<Blob> {
+  const zip = new JSZip();
+  const bookTitle = bookDetails?.title || "Untitled Book";
+  const authorName = bookDetails?.authorName || "Anonymous";
+  const language = bookDetails?.language || "en";
+  const bookId = `urn:uuid:${Math.random().toString(36).substring(2, 10)}-${Date.now()}`;
+
+  const validChapters = chapters.filter(ch => ch.title && (ch.content || "").trim());
+
+  // 1. mimetype (MUST be first file, uncompressed)
+  zip.file("mimetype", "application/epub+zip", { compression: "STORE" });
+
+  // 2. META-INF/container.xml
+  const containerXml = `<?xml version="1.0" encoding="UTF-8"?>
+<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+  <rootfiles>
+    <rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/>
+  </rootfiles>
+</container>`;
+  zip.file("META-INF/container.xml", containerXml);
+
+  let hasCover = false;
+  let coverDataBytes: Uint8Array | null = null;
+  let coverMime = "image/jpeg";
+  let coverExt = "jpg";
+
+  if (coverUrl && coverUrl.startsWith("data:image/")) {
+    try {
+      const match = coverUrl.match(/^data:(image\/\w+);base64,/);
+      if (match) {
+        coverMime = match[1];
+        if (coverMime.includes("png")) { coverExt = "png"; }
+        const base64Data = coverUrl.replace(/^data:image\/\w+;base64,/, "");
+        coverDataBytes = base64ToUint8Array(base64Data);
+        hasCover = true;
+      }
+    } catch (e) {
+      console.warn("Could not process cover image for EPUB:", e);
+    }
+  }
+
+  // 3. Styles
+  const cssContent = `
+@page { margin: 5px; }
+body {
+  font-family: Georgia, "Times New Roman", serif;
+  line-height: 1.6;
+  margin: 0;
+  padding: 1em 1.5em;
+  color: #111111;
+  background-color: #ffffff;
+}
+h1 {
+  font-size: 2em;
+  text-align: center;
+  margin-top: 2em;
+  margin-bottom: 1em;
+  font-weight: bold;
+  page-break-before: always;
+}
+h2 {
+  font-size: 1.5em;
+  margin-top: 1.5em;
+  margin-bottom: 0.8em;
+  text-align: center;
+}
+h3 {
+  font-size: 1.2em;
+  margin-top: 1.2em;
+  margin-bottom: 0.5em;
+}
+p {
+  margin-top: 0;
+  margin-bottom: 0.8em;
+  text-indent: 1.25em;
+  text-align: justify;
+}
+p.first-paragraph {
+  text-indent: 0;
+}
+.cover-img {
+  max-width: 100%;
+  height: auto;
+  display: block;
+  margin: 0 auto;
+}
+`;
+  zip.file("OEBPS/styles.css", cssContent);
+
+  if (hasCover && coverDataBytes) {
+    zip.file(`OEBPS/cover.${coverExt}`, coverDataBytes);
+    const coverXhtml = `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" xml:lang="${language}">
+<head>
+  <title>Cover</title>
+  <link rel="stylesheet" type="text/css" href="styles.css"/>
+  <style>body { padding:0; margin:0; text-align:center; }</style>
+</head>
+<body>
+  <div style="text-align:center; padding:0; margin:0;">
+    <img src="cover.${coverExt}" alt="${escapeXml(bookTitle)}" class="cover-img"/>
+  </div>
+</body>
+</html>`;
+    zip.file("OEBPS/cover.xhtml", coverXhtml);
+  }
+
+  const chapterManifestItems: string[] = [];
+  const chapterSpineItems: string[] = [];
+
+  validChapters.forEach((ch, idx) => {
+    const chNum = idx + 1;
+    const fileId = `chapter_${chNum}`;
+    const fileName = `chapter_${chNum}.xhtml`;
+
+    chapterManifestItems.push(`<item id="${fileId}" href="${fileName}" media-type="application/xhtml+xml"/>`);
+    chapterSpineItems.push(`<itemref idref="${fileId}"/>`);
+
+    const paragraphs = (ch.content || "")
+      .split(/\n\n+/)
+      .map(p => p.trim())
+      .filter(Boolean);
+
+    let bodyHtml = `<h1>${escapeXml(ch.title)}</h1>\n`;
+    paragraphs.forEach((p, pIdx) => {
+      if (p.startsWith('# ')) {
+        bodyHtml += `<h1>${escapeXml(p.replace(/^#\s+/, ''))}</h1>\n`;
+      } else if (p.startsWith('## ')) {
+        bodyHtml += `<h2>${escapeXml(p.replace(/^##\s+/, ''))}</h2>\n`;
+      } else if (p.startsWith('### ')) {
+        bodyHtml += `<h3>${escapeXml(p.replace(/^###\s+/, ''))}</h3>\n`;
+      } else {
+        const isFirst = pIdx === 0;
+        bodyHtml += `<p class="${isFirst ? 'first-paragraph' : ''}">${escapeXml(p)}</p>\n`;
+      }
+    });
+
+    const chXhtml = `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" xml:lang="${language}">
+<head>
+  <title>${escapeXml(ch.title)}</title>
+  <link rel="stylesheet" type="text/css" href="styles.css"/>
+</head>
+<body>
+${bodyHtml}
+</body>
+</html>`;
+
+    zip.file(`OEBPS/${fileName}`, chXhtml);
+  });
+
+  const navXhtml = `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" xml:lang="${language}">
+<head>
+  <title>Table of Contents</title>
+  <link rel="stylesheet" type="text/css" href="styles.css"/>
+</head>
+<body>
+  <nav epub:type="toc" id="toc">
+    <h1>Table of Contents</h1>
+    <ol>
+      ${validChapters.map((ch, idx) => `<li><a href="chapter_${idx + 1}.xhtml">${escapeXml(ch.title)}</a></li>`).join('\n      ')}
+    </ol>
+  </nav>
+</body>
+</html>`;
+  zip.file("OEBPS/nav.xhtml", navXhtml);
+
+  const opfContent = `<?xml version="1.0" encoding="UTF-8"?>
+<package xmlns="http://www.idpf.org/2007/opf" unique-identifier="BookId" version="3.0">
+  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+    <dc:identifier id="BookId">${bookId}</dc:identifier>
+    <dc:title>${escapeXml(bookTitle)}</dc:title>
+    <dc:creator>${escapeXml(authorName)}</dc:creator>
+    <dc:language>${escapeXml(language)}</dc:language>
+    <dc:publisher>Manus AI Studio</dc:publisher>
+    <meta property="dcterms:modified">${new Date().toISOString().split('.')[0]}Z</meta>
+    ${hasCover ? '<meta name="cover" content="cover-image"/>' : ''}
+  </metadata>
+  <manifest>
+    <item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>
+    <item id="css" href="styles.css" media-type="text/css"/>
+    ${hasCover ? `<item id="cover-image" href="cover.${coverExt}" media-type="${coverMime}"/>` : ''}
+    ${hasCover ? '<item id="cover-page" href="cover.xhtml" media-type="application/xhtml+xml"/>' : ''}
+    ${chapterManifestItems.join('\n    ')}
+  </manifest>
+  <spine>
+    ${hasCover ? '<itemref idref="cover-page"/>' : ''}
+    <itemref idref="nav"/>
+    ${chapterSpineItems.join('\n    ')}
+  </spine>
+</package>`;
+  zip.file("OEBPS/content.opf", opfContent);
+
+  return await zip.generateAsync({ type: "blob" });
+}
+
+export async function exportEpubManuscript(bookDetails: any, chapters: Chapter[], coverUrl?: string | null) {
+  const blob = await createEpubBlob(bookDetails, chapters, coverUrl);
+  const safeTitle = (bookDetails?.title || "Untitled_Book").replace(/[^a-zA-Z0-9_-]/g, "_");
+  const filename = `${safeTitle}_Publishing_KDP.epub`;
+
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
 export async function exportPublishingZipBundle(bookDetails: any, chapters: Chapter[], assets: any) {
   const zip = new JSZip();
   const safeTitle = (bookDetails?.title || "Untitled_Book").replace(/[^a-zA-Z0-9_-]/g, "_");
@@ -619,6 +844,14 @@ export async function exportPublishingZipBundle(bookDetails: any, chapters: Chap
     const t = ch.title.toLowerCase().trim();
     return !t.includes('table of contents') && t !== 'contents';
   });
+
+  // 0. Pre-formatted EPUB for Kindle & Apple Books
+  try {
+    const epubBlob = await createEpubBlob(bookDetails, filteredChapters, assets?.coverUrl);
+    zip.file(`00_Manuscript_Format_EPUB.epub`, epubBlob);
+  } catch (err) {
+    console.warn("Could not add EPUB to bundle:", err);
+  }
 
   // 1. Pre-formatted KDP DOCX
   try {

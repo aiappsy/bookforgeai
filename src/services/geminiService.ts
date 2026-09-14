@@ -6,6 +6,13 @@ export interface Attachment {
   data: string;
 }
 
+function getGeminiBaseUrl() {
+  if (typeof window !== 'undefined' && window.location && window.location.origin) {
+    return `${window.location.origin}/gemini-api-proxy`;
+  }
+  return "https://generativelanguage.googleapis.com";
+}
+
 function getAI(customApiKey?: string) {
   let key = customApiKey;
 
@@ -26,7 +33,7 @@ function getAI(customApiKey?: string) {
 
   return new GoogleGenAI({
     apiKey: key.trim(),
-    httpOptions: { baseUrl: "https://generativelanguage.googleapis.com" }
+    httpOptions: { baseUrl: getGeminiBaseUrl() }
   });
 }
 
@@ -34,10 +41,10 @@ export async function testGeminiApiKey(apiKey: string): Promise<{ success: boole
   try {
     const ai = new GoogleGenAI({
       apiKey: apiKey.trim(),
-      httpOptions: { baseUrl: "https://generativelanguage.googleapis.com" }
+      httpOptions: { baseUrl: getGeminiBaseUrl() }
     });
     const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
+      model: "gemini-3.7-flash",
       contents: [{ role: "user", parts: [{ text: "Hello! Confirm status in 5 words." }] }]
     });
     if (response.text) {
@@ -78,9 +85,28 @@ async function withRetry<T>(fn: () => Promise<T>, hasCustomKey: boolean, maxRetr
                                error?.message?.includes('RESOURCE_EXHAUSTED') || 
                                error?.message?.includes('quota');
       
-      if (!isTransientError && error?.status === 400 && error?.message?.includes('API key not valid')) {
-        const keyInfo = hasCustomKey ? "the CUSTOM API key you provided in settings" : "the DEFAULT application API key";
-        throw new Error(`The API key provided is not valid. (Using ${keyInfo}). Please check your Gemini API key in settings or use the default one if available.`);
+      if (!isTransientError && (
+        error?.status === 400 || 
+        error?.status === 403 || 
+        error?.message?.includes('API key') || 
+        error?.message?.includes('leaked') ||
+        error?.message?.includes('API_KEY_INVALID')
+      )) {
+        const keyInfo = hasCustomKey ? "the CUSTOM API key provided in settings" : "the default application API key";
+        let errDesc = error?.message || 'API key issue';
+        if (typeof errDesc === 'string' && errDesc.trim().startsWith('{')) {
+          try {
+            const parsed = JSON.parse(errDesc.trim());
+            if (parsed?.error?.message) errDesc = parsed.error.message;
+          } catch {}
+        }
+        
+        if (errDesc.toLowerCase().includes('leaked') || errDesc.toLowerCase().includes('compromised')) {
+          throw new Error(`[API_KEY_LEAKED] Your Gemini API key (${keyInfo}) was reported as leaked/compromised by Google. Please enter a new free Google Gemini API key to continue.`);
+        }
+        if (errDesc.toLowerCase().includes('not valid') || errDesc.includes('API_KEY_INVALID')) {
+          throw new Error(`[API_KEY_INVALID] The Gemini API key provided (${keyInfo}) is not valid. Please configure a valid Google Gemini API key in settings.`);
+        }
       }
 
     if (isTransientError && retries < maxRetries) {
@@ -91,14 +117,22 @@ async function withRetry<T>(fn: () => Promise<T>, hasCustomKey: boolean, maxRetr
     } else {
         const keyInfo = hasCustomKey ? "your custom API key" : "the default application API key";
         let raw = error?.message || 'Unknown error';
-        if (typeof raw === 'string' && raw.trim().startsWith('{')) {
-          try {
-            const parsed = JSON.parse(raw.trim());
-            if (parsed?.error?.message) {
-              raw = parsed.error.message;
+        if (typeof raw === 'string') {
+          if (raw.includes('<!DOCTYPE html>') || raw.includes('<html')) {
+            if (raw.includes('PayloadTooLargeError') || raw.includes('entity too large')) {
+              raw = "Payload Too Large: The request content or attachment exceeded the server limit. Please try sending a shorter prompt or smaller attachment.";
+            } else {
+              raw = "Server Error: Received an HTML error response from the proxy server.";
             }
-          } catch {
-            // keep raw
+          } else if (raw.trim().startsWith('{')) {
+            try {
+              const parsed = JSON.parse(raw.trim());
+              if (parsed?.error?.message) {
+                raw = parsed.error.message;
+              }
+            } catch {
+              // keep raw
+            }
           }
         }
         if (raw.includes('RESOURCE_EXHAUSTED') || raw.includes('429') || raw.includes('quota')) {
@@ -139,7 +173,7 @@ export async function generateBackCover(bookDetails: any, chaptersTitleList: str
   }
 
   const response = await withRetry(() => ai.models.generateContent({
-    model: "gemini-3.6-flash",
+    model: "gemini-3.7-flash",
     contents: [{ role: "user", parts: [{ text: prompt }] }],
   }), !!apiKey);
 
@@ -193,7 +227,7 @@ export interface AmazonNicheOpportunityResult {
 export async function researchNiche(idea: string, apiKey?: string) {
   const ai = getAI(apiKey);
   const response = await withRetry(() => ai.models.generateContent({
-    model: "gemini-3.6-flash",
+    model: "gemini-3.7-flash",
     contents: `Analyze Amazon KDP for niche: '${idea}'. Return a JSON object with: demand_score (0-100), top_keywords (array of strings), recommended_categories (array of strings).`,
     config: {
       responseMimeType: "application/json",
@@ -266,7 +300,7 @@ Return a JSON object conforming strictly to this schema:
 - actionable_verdict: string (3-4 sentence strategic summary on how to win this niche on Amazon KDP)`;
 
   const response = await withRetry(() => ai.models.generateContent({
-    model: "gemini-3.6-flash",
+    model: "gemini-3.7-flash",
     contents: prompt,
     config: {
       responseMimeType: "application/json",
@@ -371,17 +405,75 @@ Return a JSON object conforming strictly to this schema:
   }
 }
 
-export async function generateOutline(idea: string, keywords: string[], apiKey?: string, systemPrompt?: string) {
+export async function generateOutline(idea: string, keywords: string[], apiKey?: string, systemPrompt?: string, category?: string) {
   const ai = getAI(apiKey);
 
   const generate = async (modelName: string) => {
-    const response = await ai.models.generateContent({
-      model: modelName,
-      contents: `You are an elite Literary Architect, Bestselling Ghostwriter, and Publishing Director.
-      Create a masterclass, publication-grade 12-16 chapter book outline for a project about: '${idea}'.
-      Keywords & Core Themes: ${keywords.join(", ")}.
+    let architectureInstructions = "";
+    let systemRole = "You are a master Literary Architect, NYT Bestselling Editor, and Publishing Specialist. Synthesize deep structural outlines with rich narrative momentum, tropes, psychological depth, and reader engagement loops.";
 
-      STRUCTURE EACH CHAPTER WITH DEEP LITERARY ARCHITECTURE:
+    if (category === 'sales_copy') {
+      systemRole = "You are a legendary Direct-Response Copywriting Architect and Conversion Strategist (inspired by Gary Halbert, Dan Kennedy, Eugene Schwartz, and modern direct-response masters). You design high-converting sales letters, VSLs, and promotional launch campaigns.";
+      architectureInstructions = `STRUCTURE A MASTERCLASS 10-14 PART DIRECT-RESPONSE SALES COPY SEQUENCE:
+      - **Section 1: The Irresistible Hook & Lead**: Pre-head, arresting headline, subhead, and curiosity hook.
+      - **Section 2: The Core Problem & Pain Agitation**: Visceral breakdown of the prospect's real frustrations and emotional pain points.
+      - **Section 3: The Failed Solutions & Villain**: Why traditional methods fail and the hidden enemy/obstacle.
+      - **Section 4: The Epiphany Bridge & Origin Story**: The authentic breakthrough discovery and journey.
+      - **Section 5: The Unique Mechanism & Solution Reveal**: The proprietary system/framework that makes success inevitable.
+      - **Section 6: Deep Dive into Core Deliverables / Features**: Detailed breakdown of what the prospect receives.
+      - **Section 7: Social Proof & Case Studies**: Specific transformation stories, metrics, and empirical proof.
+      - **Section 8: The Irresistible Offer Architecture**: The complete package, value proposition, and deliverables.
+      - **Section 9: The Value Stack & High-Value Bonuses**: Stacked value calculation and complementary bonuses.
+      - **Section 10: The Ironclad Guarantee & Risk Reversal**: 30-to-90 day no-risk guarantee terms.
+      - **Section 11: The Urgency & Scarcity Drivers**: Deadline, limited enrollment, or consequence of delayed action.
+      - **Section 12: Objection Buster FAQ**: Defuse the top 5-7 hidden customer hesitations.
+      - **Section 13: The Final High-Converting Call to Action (CTA) & P.S. Sequence**: Decisive closing arguments and urgency triggers.`;
+    } else if (category === 'white_paper') {
+      systemRole = "You are a Senior B2B Strategy Consultant, Enterprise Technology Architect, and Principal Industry Analyst (McKinsey/Gartner-grade). You design authoritative, research-backed white papers and institutional industry reports.";
+      architectureInstructions = `STRUCTURE AN AUTHORITATIVE 8-12 SECTION B2B WHITE PAPER & INDUSTRY REPORT:
+      - **Section 1: Executive Summary**: Core thesis, strategic context, and key executive takeaways.
+      - **Section 2: Macroeconomic & Industry Landscape**: Emerging market dynamics, technological shifts, and regulatory drivers.
+      - **Section 3: Market Problem Definition & Limitations of Legacy Approaches**: The operational bottleneck and total cost of inaction.
+      - **Section 4: The Novel Architectural Framework**: The paradigm shift, foundational methodology, and architectural diagram/model.
+      - **Section 5: Technical & Operational Methodology**: In-depth analysis of components, integration, and operational workflows.
+      - **Section 6: Empirical Validation & Benchmark Case Studies**: Real-world performance data, testing benchmarks, and ROI metrics.
+      - **Section 7: Financial Impact & Total Cost of Ownership (TCO)**: Economic modeling, cost reduction, and revenue acceleration.
+      - **Section 8: Enterprise Security, Governance, Compliance & Risk**: Enterprise risk mitigation, data privacy, and governance frameworks.
+      - **Section 9: Strategic Implementation Roadmap**: Phased rollout phases (30-60-90 days), change management, and milestones.
+      - **Section 10: Strategic Recommendations & Next Steps**: Actionable guidance for executive stakeholders and decision-makers.`;
+    } else if (category === 'web_copy') {
+      systemRole = "You are a master Conversion Rate Optimization (CRO) Architect and Principal Digital UX Copywriter. You design high-converting web experiences, landing page suites, and modular digital funnel copy.";
+      architectureInstructions = `STRUCTURE A COMPLETE HIGH-CONVERSION DIGITAL WEB COPY & LANDING PAGE SUITE:
+      - **Section 1: Hero Section (Above-The-Fold)**: Attention-grabbing H1 headline, benefit subhead, primary CTA, and social proof trust badges.
+      - **Section 2: The Problem Matrix & Customer Pain Awareness**: Agitating the current struggle with relatable scenarios and bulleted pain points.
+      - **Section 3: The Core Value Proposition & Solution Overview**: Introducing the platform/service with crisp, benefit-first positioning.
+      - **Section 4: Key Features & Outcome-Driven Benefits**: 4-6 modular feature blocks formatted as 'Feature -> Tangible Benefit -> Emotional Relief'.
+      - **Section 5: How It Works (3-Step Frictionless Flow)**: Visual, step-by-step user onboarding journey from signup to first win.
+      - **Section 6: Wall of Social Proof & Customer Case Stories**: Testimonial quotes, before/after metrics, and logo cloud architecture.
+      - **Section 7: Comparison & Market Differentiation Matrix**: Side-by-side comparison table vs. status quo and competitors.
+      - **Section 8: Pricing Tiers & Package Breakdown**: Plan tiers, highlighted recommended tier, feature checklist, and value anchoring.
+      - **Section 9: Frictionless FAQ Section**: Overcoming pricing, onboarding, and compatibility objections.
+      - **Section 10: Sticky Conversion Banner & Final Call to Action**: High-urgency closing banner with dual CTAs and risk-free guarantee.
+      - **Section 11: Secondary Page Copy (About Us & Feature Deep Dive)**: Micro-copy, mission statement, and deep feature page blurbs.`;
+    } else if (category === 'children_stories') {
+      systemRole = "You are an acclaimed children's author, storyteller, and literacy specialist (inspired by Roald Dahl, Maurice Sendak, Julia Donaldson, and E.B. White). You design enchanting children's books, picture book page breakdowns, and juvenile story outlines.";
+      architectureInstructions = `STRUCTURE AN ENCHANTING CHILDREN'S STORY / JUVENILE BOOK OUTLINE:
+      - **Story Premise & Core Wonder**: Engaging premise, curious problem or quest, and emotional/moral core.
+      - **Target Age Range & Reading Level**: Explicit age bracket (e.g. Picture Books Ages 2-6, Early Readers Ages 5-8, Chapter Books Ages 6-10, Middle Grade Ages 8-12).
+      - **Main Characters & Quirks**: Lovable protagonist, distinct sidekicks, and whimsical or relatable foils with unique voices.
+      - **Setting & Sensory World**: Whimsical or familiar setting rich in tactile wonder, sights, and sounds.
+      - **Chapter / Scene Breakdown (8-12 Episodes/Scenes)**:
+        * Catchy, playful scene or chapter title.
+        * Narrative beat & action (rising suspense, funny mishaps, moment of courage).
+        * Core dialogue & character milestone.
+        * [Illustration Cue]: Suggested visual illustration prompt for each page/spread (character actions, background details, expressions).
+        * Heartwarming emotional takeaway or gentle lesson.
+      
+      MANDATORY CHARACTER NAMING & DIVERSITY RULES:
+      - Every character introduced MUST have a distinct, delightful name tailored to children's storytelling.
+      - Avoid overused generic tropes. Generate fresh, memorable, child-friendly names.`;
+    } else {
+      architectureInstructions = `STRUCTURE EACH CHAPTER WITH DEEP LITERARY ARCHITECTURE:
       - **Chapter Title & Subtitle**: High-impact, engaging title.
       - **Core Premise & Objectives**: Key narrative hook or thesis statement.
       - **Key Themes & Sub-topics**: 4-6 detailed bullet points outlining structural progression.
@@ -391,27 +483,37 @@ export async function generateOutline(idea: string, keywords: string[], apiKey?:
       
       MANDATORY CHARACTER NAMING & DIVERSITY RULES:
       - Every character, narrative subject, or case study figure introduced MUST have a distinct first name AND a distinct surname (no repeating first or last names across characters in the manuscript).
-      - NEVER use generic AI overused default names (e.g. "Alex", "Sarah", "Elena", "Marcus Vance", "Dr. Jenkins", "David", "Maya", "Ethan", "Chloe", "Carter"). Generate fresh, distinctive, authentic names tailored to this project's setting.`,
+      - NEVER use generic AI overused default names (e.g. "Alex", "Sarah", "Elena", "Marcus Vance", "Dr. Jenkins", "David", "Maya", "Ethan", "Chloe", "Carter"). Generate fresh, distinctive, authentic names tailored to this project's setting.`;
+    }
+
+    const response = await ai.models.generateContent({
+      model: modelName,
+      contents: `You are an elite Literary Architect, Bestselling Ghostwriter, and Publishing Director.
+      Create a masterclass, publication-grade outline for a project about: '${idea}'.
+      Category / Format: ${category ? category.replace('_', ' ').toUpperCase() : 'MANUSCRIPT'}.
+      Keywords & Core Themes: ${keywords.join(", ")}.
+
+      ${architectureInstructions}`,
       config: {
         thinkingConfig: { thinkingBudget: 2048 },
-        systemInstruction: systemPrompt || "You are a master Literary Architect, NYT Bestselling Editor, and Publishing Specialist. Synthesize deep structural outlines with rich narrative momentum, tropes, psychological depth, and reader engagement loops."
+        systemInstruction: systemPrompt || systemRole
       }
     });
     return response.text || "";
   };
 
   try {
-    return await withRetry(() => generate("gemini-3.6-flash"), !!apiKey);
+    return await withRetry(() => generate("gemini-3.7-flash"), !!apiKey);
   } catch (e: any) {
-    console.warn("Flash model with thinking failed for outline generation. Retrying standard...", e);
-    return await withRetry(() => generate("gemini-3.1-pro-preview"), !!apiKey);
+    console.warn("Outline generation retry on gemini-3.7-flash...", e);
+    return await withRetry(() => generate("gemini-3.7-flash"), !!apiKey);
   }
 }
 
 export async function extractChapters(outline: string, apiKey?: string, language: string = 'English') {
   const ai = getAI(apiKey);
   const response = await withRetry(() => ai.models.generateContent({
-    model: "gemini-3.6-flash",
+    model: "gemini-3.7-flash",
     contents: `Extract a list of chapter titles exactly as they appear in this outline. Return a JSON array of strings. Keep them in ${language}. Outline: ${outline}`,
     config: { 
       responseMimeType: "application/json",
@@ -482,7 +584,7 @@ export async function summarizeChapterForContinuity(
   const ai = getAI(apiKey);
   try {
     const res = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
+      model: "gemini-3.7-flash",
       contents: `Provide a concise 2 to 3 sentence narrative and factual summary of what occurs and is established in Chapter titled "${chapterTitle}". Focus on plot progression, key character developments, core arguments, and current narrative state. Do NOT include introductory filler.
 
 CHAPTER CONTENT:
@@ -523,7 +625,7 @@ Return JSON matching this exact schema:
 If the user feedback is purely a typo fix or non-repeatable change, return an empty array {"rules": []}.`;
 
     const res = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
+      model: "gemini-3.7-flash",
       contents: prompt,
       config: {
         responseMimeType: "application/json",
@@ -571,10 +673,11 @@ export async function generateChapter(
   apiKey?: string,
   systemPrompt?: string,
   signal?: AbortSignal,
-  continuityContext?: ContinuityContext
+  continuityContext?: ContinuityContext,
+  category?: string
 ) {
   const ai = getAI(apiKey);
-  const topic = bookIdea && bookIdea.trim() !== '' ? bookIdea : 'the book topic';
+  const topic = bookIdea && bookIdea.trim() !== '' ? bookIdea : 'the project topic';
 
   if (signal?.aborted) {
     throw new Error('Generation cancelled by user');
@@ -583,31 +686,70 @@ export async function generateChapter(
   // Format learned rules context
   let learnedRulesBlock = '';
   if (continuityContext?.learnedRules && continuityContext.learnedRules.length > 0) {
-    learnedRulesBlock = `\n\nCRITICAL AUTHOR CORRECTIONS & LEARNED STYLE RULES (MANDATORY ENFORCEMENT ACROSS ALL CHAPTERS):\nThe author has explicitly requested the following style/tone/character rules from previous chapter feedback. You MUST strictly obey every single rule below:\n` +
+    learnedRulesBlock = `\n\nCRITICAL AUTHOR CORRECTIONS & LEARNED STYLE RULES (MANDATORY ENFORCEMENT ACROSS ALL CHAPTERS/SECTIONS):\nThe author has explicitly requested the following style/tone/character rules from previous feedback. You MUST strictly obey every single rule below:\n` +
       continuityContext.learnedRules.map((r, i) => `${i + 1}. [${r.category.toUpperCase()}] ${r.rule}`).join('\n') + '\n';
   }
 
   // Format preceding chapter summaries context
   let precedingSummariesBlock = '';
   if (continuityContext?.precedingChapterSummaries && continuityContext.precedingChapterSummaries.length > 0) {
-    precedingSummariesBlock = `\n\nPRECEDING CHAPTERS STORY & ARGUMENT PROGRESSION (MAINTAIN NARRATIVE CONTINUITY):\nThe book has progressed through the following preceding chapters. Ensure this new chapter seamlessly picks up where the previous story/argument left off without repeating introduced concepts or character intros:\n` +
-      continuityContext.precedingChapterSummaries.map((s, i) => `- Chapter ${i + 1}: ${s}`).join('\n') + '\n';
+    precedingSummariesBlock = `\n\nPRECEDING SECTIONS/CHAPTERS STORY & ARGUMENT PROGRESSION (MAINTAIN CONTINUITY):\nThe manuscript has progressed through the following preceding sections. Ensure this new section seamlessly picks up where the previous argument left off without redundant repetition:\n` +
+      continuityContext.precedingChapterSummaries.map((s, i) => `- Section/Chapter ${i + 1}: ${s}`).join('\n') + '\n';
   }
 
   // Format immediate previous chapter ending
   let previousEndingBlock = '';
   if (continuityContext?.previousChapterEnding) {
-    previousEndingBlock = `\n\nIMMEDIATELY PRECEDING CHAPTER CONCLUSION (BRIDGE SEAMLESSLY):\nHere are the final paragraphs of the preceding chapter. Open this new chapter with smooth narrative bridge and momentum:\n"""\n${continuityContext.previousChapterEnding}\n"""\n`;
+    previousEndingBlock = `\n\nIMMEDIATELY PRECEDING SECTION CONCLUSION (BRIDGE SEAMLESSLY):\nHere are the final paragraphs of the preceding section. Open this new section with smooth bridge and momentum:\n"""\n${continuityContext.previousChapterEnding}\n"""\n`;
   }
 
   // Format existing character names block
   let existingCharactersBlock = '';
   if (continuityContext?.existingCharacterNames && continuityContext.existingCharacterNames.length > 0) {
-    existingCharactersBlock = `\n\nESTABLISHED PROJECT CHARACTERS (MANDATORY NAME CONTINUITY & UNIQUNESS):\nThe following character names already exist in this manuscript project:\n` +
+    existingCharactersBlock = `\n\nESTABLISHED PROJECT CHARACTERS / CASE STUDY ENTITIES:\nThe following entities already exist in this manuscript project:\n` +
       continuityContext.existingCharacterNames.map(n => `- ${n}`).join('\n') +
-      `\nCRITICAL CHARACTER NAMING LAWS:
-1. Re-use these exact names ONLY when referring to these same established characters.
-2. For ANY newly introduced character in this chapter, you MUST assign a completely NEW first name AND a completely NEW surname. No new character should share a first name or a surname with any existing character!\n`;
+      `\nCRITICAL NAMING LAWS:
+1. Re-use these exact names ONLY when referring to these same established entities.
+2. For ANY newly introduced entity in this section, assign a completely NEW distinct name.\n`;
+  }
+
+  let categorySpecificRequirements = "";
+  let defaultSystemPersona = "You are a Pulitzer-worthy author and master ghostwriter. Synthesize authoritative depth, emotional intelligence, visceral narrative texture, and flawless human rhythm while rigorously adhering to all learned user corrections and manuscript continuity.";
+
+  if (category === 'sales_copy') {
+    defaultSystemPersona = "You are an elite Direct-Response Copywriting Legend and Conversion Strategist. Craft high-converting, psychologically irresistible sales copy with high emotional velocity and decisive calls to action.";
+    categorySpecificRequirements = `SPECIALIZED DIRECT-RESPONSE SALES COPY REQUIREMENTS:
+1. PERSUASIVE VELOCITY & CONVERSION CADENCE: Write high-converting sales copy designed to capture immediate attention, agitate core pain points, present compelling proof, and drive action.
+2. PSYCHOLOGICAL TRIGGERS: Incorporate fascination bullet points, risk reversals, value stack breakdowns, authentic urgency, and objection disarmament.
+3. CONVERSATIONAL CADENCE & FORMATTING: Use short punchy lines, subheads, emphasized words (bold/italics), bulleted benefits (Features -> Tangible Benefits -> Emotional Payoff), and high-impact Call-To-Action (CTA) anchor boxes.
+4. ZERO CORPORATE WAFFLE: Ban dry corporate jargon. Write in a direct, one-on-one persuasive tone.`;
+  } else if (category === 'white_paper') {
+    defaultSystemPersona = "You are a Senior B2B Strategy Consultant and Enterprise Technology Architect (McKinsey/Gartner-grade). Synthesize authoritative, data-driven white papers with analytical rigor, structured frameworks, and executive clarity.";
+    categorySpecificRequirements = `SPECIALIZED B2B WHITE PAPER & INDUSTRY REPORT REQUIREMENTS:
+1. EXECUTIVE RIGOR & OBJECTIVITY: Deliver institutional-grade analysis with empirical clarity, authoritative problem definitions, and strategic recommendations.
+2. STRUCTURED FRAMEWORKS & TABLES: Use Markdown data tables, architectural breakdown lists, key takeaway callout boxes, and quantitative ROI formulas.
+3. ENTERPRISE RELEVANCE: Detail technical architectures, integration methodologies, total cost of ownership (TCO), risk mitigation, and phased implementation roadmaps.
+4. CITATION & METHODOLOGY TONE: Write with authoritative, balanced precision, avoiding empty promotional hype.`;
+  } else if (category === 'web_copy') {
+    defaultSystemPersona = "You are a master Conversion Rate Optimization (CRO) Copywriter and Principal UX Content Designer. Craft crisp, scannable digital landing page and web copy that converts visitors into active customers.";
+    categorySpecificRequirements = `SPECIALIZED DIGITAL WEB COPY & LANDING PAGE REQUIREMENTS:
+1. RAPID SCANNABILITY & VISUAL HIERARCHY: Structure copy for modern web readers with punchy H1/H2 headlines, subheads, and bite-sized modular paragraphs.
+2. BENEFIT-DRIVEN POSITIONING: Frame every feature as a tangible customer outcome ('Feature -> Direct Benefit -> Emotional Relief').
+3. UX INTERACTION MODULES: Include clear visual cues for Hero copy, badge labels, social proof testimonial quotes, comparison tables, FAQ accordions, and primary/secondary CTA buttons.
+4. FRICTIONLESS CONVERSION FOCUS: Write compelling, micro-commitment button copy and risk-free guarantee snippets.`;
+  } else if (category === 'children_stories') {
+    defaultSystemPersona = "You are an acclaimed children's author, master storyteller, and literacy specialist (inspired by Roald Dahl, Julia Donaldson, Maurice Sendak, and E.B. White). Craft enchanting, age-appropriate children's stories with vivid sensory imagery, delightful rhythmic cadence, engaging character personalities, playful dialogue, and gentle positive moral or emotional themes.";
+    categorySpecificRequirements = `SPECIALIZED CHILDREN'S STORY & PICTURE BOOK CHAPTER REQUIREMENTS:
+1. DELIGHTFUL AGE-APPROPRIATE NARRATIVE: Write captivating storytelling with vibrant sensory textures, relatable emotional stakes, gentle humor, and age-appropriate vocabulary tailored to young readers and read-aloud listening.
+2. RHYTHMIC CADENCE & READ-ALOUD QUALITY: Ensure musical cadence, lively pacing, and pleasant acoustic balance ideal for reading aloud. Use vivid sound effects/onomatopoeia, playful rhymes where appropriate, and natural dialogue.
+3. EMBEDDED ILLUSTRATION CUES: Include visual art cues in brackets throughout the scenes, e.g. \`[Illustration: Full-page spread showing Barnaby the curious badger peeking out from an oversized glowing mushroom canopy under starlight]\` to guide illustration layouts.
+4. EMOTIONAL WARMTH & HEARTFELT VALUES: Nurture empathy, curiosity, resilience, friendship, kindness, or courage without sounding preachy or condescending.
+5. WHOLESOME & SAFE: Strictly avoid adult violence, dark cynicism, vulgarity, or ungrounded fear.`;
+  } else {
+    categorySpecificRequirements = `SPECIALIZED MANUSCRIPT CHAPTER REQUIREMENTS:
+1. LENGTH & EXPANSIVE DEPTH: Write a full-length chapter (2,000 to 3,500 words). Thoroughly unpack every sub-topic with vivid narrative detail, real-world case studies, psychological insights, dialogue, or step-by-step masterclass demonstrations.
+2. TOPIC ALIGNMENT: Directly explore and master the specific subject matter of "${chapterTitle}", keeping aligned with the overall manuscript concept '${topic}'.
+3. ELEGANT LITERARY LAYOUT: Use clean Markdown with compelling H2 and H3 subheadings, callout quotes, bulleted insights, and chapter-bridging conclusions.`;
   }
 
   const generate = async (modelName: string) => {
@@ -617,9 +759,10 @@ export async function generateChapter(
 
     const generatePromise = ai.models.generateContent({
       model: modelName,
-      contents: `You are an award-winning, master bestselling author writing a publication-grade, immersive chapter for a book manuscript.
+      contents: `You are an award-winning master author and content strategist writing a publication-grade section/chapter for a manuscript project.
       
-      BOOK TOPIC / CORE CONCEPT: '${topic}'
+      MANUSCRIPT TOPIC / CORE CONCEPT: '${topic}'
+      CATEGORY / FORMAT: ${category ? category.replace('_', ' ').toUpperCase() : 'MANUSCRIPT'}
       
       FULL MANUSCRIPT OUTLINE FOR CONTEXT:
       ${outline}
@@ -628,27 +771,20 @@ export async function generateChapter(
       ${existingCharactersBlock}
       ${learnedRulesBlock}
       
-      TASK: Write the complete, deeply detailed, comprehensive content for the chapter titled: "${chapterTitle}".
+      TASK: Write the complete, deeply detailed, comprehensive content for the section/chapter titled: "${chapterTitle}".
       
-      CRITICAL MANDATORY CHAPTER REQUIREMENTS:
-      1. LENGTH & EXPANSIVE DEPTH: Write a full-length chapter (2,000 to 3,500 words). Thoroughly unpack every sub-topic with vivid narrative detail, real-world case studies, psychological insights, dialogue, or step-by-step masterclass demonstrations.
-      2. TOPIC ALIGNMENT: Directly explore and master the specific subject matter of "${chapterTitle}", keeping aligned with the overall book concept '${topic}'.
-      3. ELEGANT LITERARY LAYOUT: Use clean Markdown with compelling H2 and H3 subheadings, callout quotes, bulleted insights, and chapter-bridging conclusions.
-      4. DO NOT abbreviate, cut, summarize, or output incomplete text. Write out the full chapter in complete, polished prose from hook to resolution.
-      5. DO NOT repeat the main book title as an H1 heading at the start. Begin directly with an engaging narrative hook or H2 section title.
-      6. COHESION & CONTINUITY: Build directly on the preceding chapters and respect all author corrections/learned style rules listed above.
-      7. AUTHENTIC HUMAN PROSE & DE-AI MANDATE:
-         - ZERO AI BUZZWORDS OR FORMULAIC CRUTCHES: Strictly forbidden words include "delve", "paradigm shift", "seamlessly", "holistic", "ever-evolving", "landscape", "fostering", "synergy", "testament to", "tapestry", "beacon", "vital role", "pivotal", "underscore", "in conclusion", "in today's fast-paced world", "intricate web", "transformative journey".
-         - MASTERFUL BURSTINESS & CADENCE: Alternate sentence lengths dynamically. Mix ultra-short 3-5 word declarations with expansive, multi-clause descriptive observations.
-         - RICH SENSORY DETAIL & ACTIVE VERBS: Write with visceral clarity, emotional resonance, grounded metaphors, and natural conversational authority.
-      8. MANDATORY CHARACTER NAMING UNIQUNESS & DIVERSITY (NO DUPLICATE FIRST OR SURNAMES):
-         - UNIQUE NAMES PER MANUSCRIPT: Every character in this manuscript MUST have a distinct first name AND a distinct surname so readers do not confuse different characters.
-         - NO SHARED FIRST NAMES OR SURNAMES: Do NOT give different characters the same first name or the same surname unless they are explicitly established in the narrative as immediate family members (e.g. siblings or parent/child sharing a family surname).
-         - NO OVERUSED AI CLICHÉ NAMES: NEVER default to overused generic AI character names (e.g. "Alex", "Sarah", "Elena", "Marcus Vance", "Dr. Jenkins", "David", "Maya", "Ethan", "Chloe", "Carter", "Lucas", "Olivia"). Generate fresh, distinctive, authentic names tailored to the book's setting.
-         - PROJECT CONTINUITY: Keep established character names consistent across all chapters in this project, and never give newly introduced characters the names of existing characters in the project.`,
+      CRITICAL MANDATORY REQUIREMENTS:
+      ${categorySpecificRequirements}
+      - DO NOT abbreviate, cut, summarize, or output incomplete placeholder text. Write out the full section in complete, polished prose.
+      - DO NOT repeat the main project title as an H1 heading at the start. Begin directly with an engaging hook or H2 section title.
+      - COHESION & CONTINUITY: Build directly on the preceding sections and respect all author corrections/learned style rules listed above.
+      - AUTHENTIC HUMAN PROSE & DE-AI MANDATE:
+         * ZERO AI BUZZWORDS OR FORMULAIC CRUTCHES: Strictly forbidden words include "delve", "paradigm shift", "seamlessly", "holistic", "ever-evolving", "landscape", "fostering", "synergy", "testament to", "tapestry", "beacon", "vital role", "pivotal", "underscore", "in conclusion", "in today's fast-paced world", "intricate web", "transformative journey".
+         * MASTERFUL BURSTINESS & CADENCE: Alternate sentence lengths dynamically. Mix ultra-short punchy declarations with expansive descriptive observations.
+         * RICH SENSORY DETAIL & ACTIVE VERBS: Write with visceral clarity, emotional resonance, grounded metaphors, and natural authority.`,
       config: {
         thinkingConfig: { thinkingBudget: 2048 },
-        systemInstruction: (systemPrompt ? `${systemPrompt}\n\n` : '') + "You are a Pulitzer-worthy author and master ghostwriter. Synthesize authoritative depth, emotional intelligence, visceral narrative texture, and flawless human rhythm while rigorously adhering to all learned user corrections and manuscript continuity."
+        systemInstruction: (systemPrompt ? `${systemPrompt}\n\n` : '') + defaultSystemPersona
       }
     });
 
@@ -675,13 +811,13 @@ export async function generateChapter(
   };
 
   try {
-    return await withRetry(() => generate("gemini-3.6-flash"), !!apiKey);
+    return await withRetry(() => generate("gemini-3.7-flash"), !!apiKey);
   } catch (e: any) {
     if (e.message?.includes('cancelled') || signal?.aborted) {
       throw e;
     }
-    console.warn("Flash model failed for chapter generation. Falling back to gemini-2.5-flash...", e);
-    return await withRetry(() => generate("gemini-2.5-flash"), !!apiKey);
+    console.warn("Flash model failed for chapter generation. Retrying with gemini-3.7-flash...", e);
+    return await withRetry(() => generate("gemini-3.7-flash"), !!apiKey);
   }
 }
 
@@ -910,10 +1046,10 @@ ALWAYS USE THIS EXACT MARKDOWN FORMAT: ![Detailed prompt describing the visual](
 
   let response: any;
   try {
-    response = await withRetry(() => callModel("gemini-3.1-pro-preview"), !!apiKey);
+    response = await withRetry(() => callModel("gemini-3.7-flash"), !!apiKey);
   } catch (e: any) {
-    console.warn("Pro model failed or unavailable in chat, falling back to gemini-3.6-flash...", e);
-    response = await withRetry(() => callModel("gemini-3.6-flash"), !!apiKey);
+    console.warn("Primary chat call failed on gemini-3.7-flash, retrying...", e);
+    response = await withRetry(() => callModel("gemini-3.7-flash"), !!apiKey);
   }
 
   let replyText = response.text || "";
@@ -1032,7 +1168,7 @@ CRITICAL: DO NOT copy or clone any specific existing book cover, copyrighted lay
   }
 
   const response = await withRetry(() => ai.models.generateContent({
-    model: "gemini-3.6-flash",
+    model: "gemini-3.7-flash",
     contents: [{ role: 'user', parts: userParts.map(p => typeof p === 'string' ? { text: p } : p) }],
     config: {
       systemInstruction: directive
@@ -1270,7 +1406,7 @@ COVER DESIGN REQUIREMENTS:
 4. Return ONLY valid XML SVG starting with <svg> and ending with </svg>. No markdown block quotes, no markdown explanation before or after.`;
 
   try {
-    const modelsToTry = ["gemini-3.6-flash", "gemini-2.5-flash", "gemini-3.1-flash-lite"];
+    const modelsToTry = ["gemini-3.7-flash", "gemini-3.1-flash-lite"];
     for (const model of modelsToTry) {
       try {
         const response = await withRetry(() => ai.models.generateContent({
@@ -1402,7 +1538,7 @@ ${context}
 Return a JSON object with a single property "keywords": array of exactly 7 strings.`;
 
     const response = await withRetry(() => ai.models.generateContent({
-      model: "gemini-3.6-flash",
+      model: "gemini-3.7-flash",
       contents: [{ role: "user", parts: [{ text: prompt }] }],
       config: {
         responseMimeType: "application/json",
@@ -1433,7 +1569,7 @@ Return a JSON object with a single property "keywords": array of exactly 7 strin
 export async function optimizeMetadata(idea: string, apiKey?: string, language: string = 'English') {
   const ai = getAI(apiKey);
   const response = await withRetry(() => ai.models.generateContent({
-    model: "gemini-3.6-flash",
+    model: "gemini-3.7-flash",
     contents: `You are an expert Amazon KDP publishing specialist and SEO strategist.
 Analyze the following book details, title, and manuscript context, and generate deeply relevant KDP metadata, keywords, and BISAC categories specifically tailored to THIS EXACT BOOK.
 
@@ -1570,7 +1706,7 @@ Include clear guidelines on:
 Format as a clear, directive prompt starting with: "MATCH THIS COPYWRITING STYLE:" followed by bullet points.`;
 
   const response = await withRetry(() => ai.models.generateContent({
-    model: "gemini-3.6-flash",
+    model: "gemini-3.7-flash",
     contents: [{ role: "user", parts: [{ text: prompt }] }],
   }), !!apiKey);
 
@@ -1604,7 +1740,7 @@ Return a JSON object with:
 - chapters: array of objects with { title: string, content: string }`;
 
   const response = await withRetry(() => ai.models.generateContent({
-    model: "gemini-3.6-flash",
+    model: "gemini-3.7-flash",
     contents: prompt,
     config: {
       responseMimeType: "application/json",
@@ -1723,7 +1859,7 @@ Structure the Press Release strictly with:
 Write in clean, polished Markdown. CRITICAL: Match the requested language (${bookDetails.language || 'English'}).`;
 
   const response = await withRetry(() => ai.models.generateContent({
-    model: "gemini-3.6-flash",
+    model: "gemini-3.7-flash",
     contents: [{ role: "user", parts: [{ text: prompt }] }],
   }), !!apiKey);
 
@@ -1753,7 +1889,7 @@ Include emojis, line breaks for readability, clear Calls to Action (CTAs), and 5
 Format nicely with Markdown headings for each post.`;
 
   const response = await withRetry(() => ai.models.generateContent({
-    model: "gemini-3.6-flash",
+    model: "gemini-3.7-flash",
     contents: [{ role: "user", parts: [{ text: prompt }] }],
   }), !!apiKey);
 
@@ -1782,7 +1918,7 @@ Generate 4 emails with Subject Line, Preview Text, Email Body, and Call To Actio
 Format clearly in Markdown.`;
 
   const response = await withRetry(() => ai.models.generateContent({
-    model: "gemini-3.6-flash",
+    model: "gemini-3.7-flash",
     contents: [{ role: "user", parts: [{ text: prompt }] }],
   }), !!apiKey);
 
@@ -1814,7 +1950,7 @@ Provide:
 Output in clean Markdown format.`;
 
   const response = await withRetry(() => ai.models.generateContent({
-    model: "gemini-3.6-flash",
+    model: "gemini-3.7-flash",
     contents: [{ role: "user", parts: [{ text: prompt }] }],
   }), !!apiKey);
 
@@ -1849,7 +1985,7 @@ Return a JSON object matching this structure:
 }`;
 
   const response = await withRetry(() => ai.models.generateContent({
-    model: "gemini-3.6-flash",
+    model: "gemini-3.7-flash",
     contents: [{ role: "user", parts: [{ text: prompt }] }],
     config: {
       responseMimeType: "application/json",
@@ -1915,7 +2051,7 @@ Provide a structured Markdown guide containing:
 6. **Grassroots Guerrilla Marketing Tactics (Zero Budget)**`;
 
   const response = await withRetry(() => ai.models.generateContent({
-    model: "gemini-3.6-flash",
+    model: "gemini-3.7-flash",
     contents: [{ role: "user", parts: [{ text: prompt }] }],
   }), !!apiKey);
 
@@ -1952,7 +2088,7 @@ export async function generateBetaReaderCritique(
   6. "executiveSummary": A 2-paragraph overall report summarizing strengths and critical fixes before publishing.`;
 
   const response = await withRetry(() => ai.models.generateContent({
-    model: "gemini-3.6-flash",
+    model: "gemini-3.7-flash",
     contents: [{ role: "user", parts: [{ text: prompt }] }],
     config: {
       responseMimeType: "application/json",
@@ -2030,7 +2166,7 @@ INSTRUCTIONS:
 5. Do NOT include meta-conversational text, preface, or commentary before/after the chapter content.`;
 
   const response = await withRetry(() => ai.models.generateContent({
-    model: "gemini-3.6-flash",
+    model: "gemini-3.7-flash",
     contents: [{ role: "user", parts: [{ text: prompt }] }],
   }), !!apiKey);
 
@@ -2126,7 +2262,7 @@ Output a clean, valid JSON object with:
 - "summary_of_changes": string[] (list of 3 to 5 key audio optimizations made, e.g. "Removed 12 redundant dialogue tags", "Converted numerical values to phonetic spoken words", "Restructured 8 complex sentences for oral breathing cadence")`;
 
   const response = await withRetry(() => ai.models.generateContent({
-    model: "gemini-3.6-flash",
+    model: "gemini-3.7-flash",
     contents: [{ role: "user", parts: [{ text: prompt }] }],
     config: {
       thinkingConfig: { thinkingBudget: 1024 },
@@ -2183,7 +2319,7 @@ PERFORM THE FOLLOWING COMPREHENSIVE DIRECTORIAL TASKS:
 8. Output entire result as a clean, valid JSON object matching the requested schema.`;
 
   const response = await withRetry(() => ai.models.generateContent({
-    model: "gemini-3.6-flash",
+    model: "gemini-3.7-flash",
     contents: [{ role: "user", parts: [{ text: prompt }] }],
     config: {
       thinkingConfig: { thinkingBudget: 2048 },
@@ -2311,7 +2447,7 @@ export async function generateAudiobookScript(
   6. **Closing Audio Cue & Chapter Outro**`;
 
   const response = await withRetry(() => ai.models.generateContent({
-    model: "gemini-3.6-flash",
+    model: "gemini-3.7-flash",
     contents: [{ role: "user", parts: [{ text: prompt }] }],
   }), !!apiKey);
 
@@ -2565,41 +2701,73 @@ export async function humanizeManuscript(
   content: string,
   mode: 'bypass' | 'natural' | 'authorial' = 'bypass',
   apiKey?: string,
-  language: string = 'English'
+  language: string = 'English',
+  intensity: 'light' | 'moderate' | 'deep' = 'moderate',
+  genre: 'narrative' | 'business' | 'memoir' | 'academic' | 'general' | 'sales_copy' | 'white_paper' | 'web_copy' | 'children_stories' = 'general'
 ): Promise<string> {
   const ai = getAI(apiKey);
 
-  let modeInstruction = "";
-  if (mode === 'bypass') {
-    modeInstruction = `MODE: MAXIMUM AI DETECTION BYPASS (HIGH BURSTINESS)
-    - Aggressively rewrite sentences to vary sentence length continuously (alternate short 3-6 word punchy sentences with longer descriptive multi-clause thoughts).
-    - Eliminate EVERY SINGLE AI cliché, corporate crutch, academic filler word, and formulaic transition.
-    - Ingest active, visceral verbs, grounded human observations, and vivid natural metaphors.`;
+  let systemPersona = "";
+  let strategyInstructions = "";
+
+  const genreGuideline: Record<string, string> = {
+    narrative: "GENRE FOCUS: Fiction & Creative Narrative. Focus on scene immersion, character perspective, dialogue rhythm, sensory grounding, and show-don't-tell techniques.",
+    children_stories: "GENRE FOCUS: Children's Stories & Picture Books. Focus on delightful age-appropriate vocabulary, rhythmic read-aloud cadence, playful dialogue, sensory wonder, warmth, and preserving [Illustration: ...] prompts intact.",
+    business: "GENRE FOCUS: Thought Leadership & Non-Fiction. Focus on authoritative clarity, engaging real-world observations, crisp logic, and memorable metaphors without corporate waffle.",
+    memoir: "GENRE FOCUS: Memoir & Personal Narrative. Focus on emotional intimacy, reflective authenticity, atmospheric detail, and genuine personal voice.",
+    academic: "GENRE FOCUS: Academic & Analytical. Focus on rigorous yet crystal-clear articulation, eliminating pedantic fluff while keeping intellectual precision.",
+    sales_copy: "GENRE FOCUS: Direct-Response Sales Copy. Focus on high-converting persuasive cadence, visceral pain/desire hooks, punchy conversational rhythms, objection handling, fascination bullets, and clear urgent call-to-actions without sounding like a robotic pitch.",
+    white_paper: "GENRE FOCUS: White Paper & Industry Report. Focus on authoritative executive clarity, data-driven analytical rigor, clear methodology frameworks, structured takeaway boxes/tables, and eliminating fluffy buzzwords while preserving technical precision.",
+    web_copy: "GENRE FOCUS: Web Copy & Digital Landing Pages. Focus on rapid visual scannability, punchy above-the-fold hooks, benefits-over-features framing, high-impact subheads, and conversion-optimized micro-copy.",
+    general: "GENRE FOCUS: General Trade & Non-Fiction. Focus on balanced readability, natural flow, engaging storytelling, and clear structure."
+  };
+
+  const intensityGuideline = {
+    light: "TRANSFORMATION INTENSITY: LIGHT / PRECISION POLISH. Make surgical improvements to fix awkward phrasing, passive constructions, and robotic transitions while preserving ~80-90% of original sentence structures.",
+    moderate: "TRANSFORMATION INTENSITY: BALANCED REFRESH. Thoroughly rephrase stiff, mechanical, or robotic sentences into engaging, fluid prose with strong natural rhythm and active voice.",
+    deep: "TRANSFORMATION INTENSITY: DEEP LITERARY RE-IMAGINE. Perform a total prose overhaul. Re-craft flat, monotone, or formulaic paragraphs into captivating, high-impact narrative prose with rich vocabulary and master-level cadence."
+  }[intensity] || "";
+
+  if (mode === 'natural') {
+    systemPersona = "You are a master developmental editor and prose stylist specializing in natural human voice, effortless readability, and engaging storytelling cadence. You eliminate robotic stiffness and create prose that reads like a thoughtful, articulate human author.";
+    strategyInstructions = `MODE: NATURAL HUMAN FLOW & CONVERSATIONAL VOICE
+- PRIORITY: Maximum readability, smooth paragraph transitions, and authentic human voice.
+- CONVERSATIONAL CADENCE: Rewrite stiff, mechanical, or passive phrasing into direct, engaging human observations. Make every paragraph flow naturally into the next.
+- ELIMINATE ROBOTIC TRANSITIONS: Strip out "Furthermore", "Moreover", "In conclusion", "It is important to note that", "As previously mentioned", "This underscores the fact that", and replace them with organic narrative connections.
+- ACTIVE HUMAN VOICE: Use active verbs, natural rhythm, and clear sentence pacing.
+- DIVERSITY OF SENTENCE LENGTH: Mix short declarative statements with flowing, well-crafted compound thoughts.`;
   } else if (mode === 'authorial') {
-    modeInstruction = `MODE: AUTHORIAL VOICE ENHANCEMENT & PROSE POLISH
-    - Polish into rich, publication-grade literary prose while keeping the author's voice authentic, warm, and natural.
-    - Eliminate robotic academic transitions, stiff corporate buzzwords, and repetitive sentence openers.
-    - Elevate prose clarity, emotional resonance, vocabulary richness, and narrative rhythm without changing any factual content.`;
+    systemPersona = "You are a world-class literary editor at a top publishing house (Penguin Random House, HarperCollins). You elevate draft manuscripts into bestselling, publication-grade literary prose with rich imagery, rhythmic cadence, and deep authorial authority.";
+    strategyInstructions = `MODE: AUTHORIAL VOICE ENHANCEMENT & LITERARY POLISH
+- PRIORITY: Bestseller-quality prose elevation, emotional resonance, and stylistic distinction.
+- LITERARY ELEVATION: Elevate flat or repetitive wording into evocative, publication-grade prose.
+- STRENGTHEN VERBS & NOUNS: Replace weak verbs + adverbs with precise, evocative verbs. Eliminate filter words ("she noticed that", "it could be seen that", "he realized").
+- SHOW, DON'T TELL: Convert abstract claims into grounded, vivid sensory imagery and sharp conceptual clarity.
+- RHYTHM & PROSE HARMONY: Craft sentence cadences and paragraph structures that mesmerize the reader and establish unmistakable authorial authority.`;
   } else {
-    modeInstruction = `MODE: NATURAL HUMAN FLOW
-    - Shift the text into a clear, direct, engaging conversational human voice.
-    - Strip away overly formal AI corporate-speak, pseudo-profound summaries, and passive phrasing. Replace with authentic, grounded human prose.
-    - Maintain smooth readability, natural cadence, and sentence length diversity.`;
+    systemPersona = "You are an anti-AI detector prose specialist. You aggressively rewrite text to maximize sentence length burstiness, eliminate all AI phrase patterns, and introduce organic human variance.";
+    strategyInstructions = `MODE: MAXIMUM AI DETECTION BYPASS (HIGH BURSTINESS)
+- PRIORITY: Maximize sentence length variation (burstiness) and perplexity to bypass AI detectors (Turnitin, GPTZero, CopyLeaks).
+- BURSTINESS: Alternate short, punchy 3-7 word sentences with rich, multi-clause thoughts.
+- ELIMINATE ALL AI TELLTALES: Strip away every formulaic structure, balanced parallel lists, and AI crutches.
+- UNPREDICTABLE HUMAN CADENCE: Introduce organic phrasing, unexpected analogies, and dynamic sentence structures.`;
   }
 
-  const prompt = `You are an elite literary editor and manuscript humanization expert specializing in turning AI drafts into genuine, human-written prose that bypasses AI detectors (Turnitin, GPTZero, CopyLeaks).
+  const selectedGenreGuideline = genreGuideline[genre] || genreGuideline.general;
 
-TASK: Completely rewrite and humanize the manuscript text below.
+  const prompt = `${systemPersona}
+
+TASK: Rewrite and transform the manuscript chapter text below according to the specified editorial strategy, intensity level, and genre focus.
 
 CRITICAL LAWS:
-1. RETAIN ALL FACTUAL CONTENT & STRUCTURE: Keep all chapter subheadings (H2, H3), key arguments, bullet points, and core logic intact. Do NOT shorten or delete content.
-2. HIGH BURSTINESS & SENTENCE VARIETY: Alternate sentence length drastically. Mix short, direct, punchy sentences (3-7 words) with rich, descriptive thoughts.
-3. ABSOLUTE BAN ON AI BUZZWORDS & CLICHÉS: Never use "delve", "paradigm shift", "seamlessly", "holistic", "ever-evolving", "landscape", "fostering", "synergy", "testament to", "tapestry", "beacon", "vital role", "pivotal", "underscore", "in conclusion", "in today's fast-paced world", "intricate web", "transformative journey", "furthermore", "moreover", "realm", "embark", "harness", "unravel", "demystify", "myriad", "plethora".
-4. MANUSCRIPT CONTINUITY & CHARACTER NAMES: Maintain all character names, key terms, and narrative continuity with the rest of the manuscript without altering proper nouns or facts.
-5. ${modeInstruction}
-6. FORMATTING: Output ONLY the complete revised Markdown manuscript. Language: ${language}.
+1. FACTUAL & STRUCTURAL INTEGRITY: Preserve all chapter subheadings (Markdown H2, H3), core facts, character names, numbers, and logical arguments intact. Do NOT delete factual content.
+2. ABSOLUTE BAN ON AI BUZZWORDS: Never output words like "delve", "paradigm shift", "seamlessly", "holistic", "ever-evolving", "landscape", "fostering", "synergy", "testament to", "tapestry", "beacon", "vital role", "pivotal", "underscore", "in conclusion", "in today's fast-paced world", "intricate web", "transformative journey", "furthermore", "moreover", "realm", "embark", "harness", "unravel", "demystify", "myriad", "plethora".
+3. ${selectedGenreGuideline}
+4. ${intensityGuideline}
+5. ${strategyInstructions}
+6. FORMATTING: Output ONLY the complete revised Markdown manuscript text. Language: ${language}.
 
-MANUSCRIPT TEXT TO HUMANIZE:
+MANUSCRIPT TEXT TO TRANSFORM:
 """
 ${content}
 """`;
@@ -2609,18 +2777,20 @@ ${content}
       model: modelName,
       contents: [{ role: "user", parts: [{ text: prompt }] }],
       config: {
-        systemInstruction: "You are a world-class literary editor. You transform robotic AI-generated drafts into organic, dynamic, human-written prose with high burstiness, zero buzzwords, and authentic voice."
+        systemInstruction: systemPersona,
+        temperature: mode === 'authorial' ? 0.88 : mode === 'natural' ? 0.85 : 0.82,
+        topP: 0.95
       }
     });
     return response.text || content;
   };
 
   try {
-    const result = await withRetry(() => generate("gemini-3.6-flash"), !!apiKey);
+    const result = await withRetry(() => generate("gemini-3.7-flash"), !!apiKey);
     return sanitizeAiBuzzwords(result);
   } catch (e: any) {
-    console.warn("Humanize error on gemini-3.6-flash, retrying...", e);
-    const result = await withRetry(() => generate("gemini-2.5-flash"), !!apiKey);
+    console.warn("Humanize error on gemini-3.7-flash, retrying...", e);
+    const result = await withRetry(() => generate("gemini-3.7-flash"), !!apiKey);
     return sanitizeAiBuzzwords(result);
   }
 }
@@ -2643,7 +2813,7 @@ PROVIDE A COMPREHENSIVE, HIGHLY DETAILED RESPONSE COVERING:
 4. Actionable Next Steps formatted in clean Markdown.`;
 
   const response = await withRetry(() => ai.models.generateContent({
-    model: "gemini-3.6-flash",
+    model: "gemini-3.7-flash",
     contents: [{ role: "user", parts: [{ text: prompt }] }],
     config: {
       thinkingConfig: { thinkingBudget: 2048 },
@@ -2652,6 +2822,388 @@ PROVIDE A COMPREHENSIVE, HIGHLY DETAILED RESPONSE COVERING:
   }), !!apiKey);
 
   return response.text || "No response received from expert system.";
+}
+
+// ---------------------------------------------------------------------------
+// VISUAL DESIGNER & CHAPTER ILLUSTRATION PIPELINE (NANO BANANA)
+// ---------------------------------------------------------------------------
+
+export interface CharacterProfile {
+  id: string;
+  name: string;
+  role?: 'protagonist' | 'deuteragonist' | 'supporting' | 'antagonist' | 'companion' | 'guide';
+  speciesOrType?: string; // e.g. "Human child (age 6)", "Small fluffy red fox", "Elderly owl wizard"
+  physicalAppearance: string; // e.g. "Round cherubic cheeks, messy chestnut curly hair, bright hazel eyes, button nose"
+  clothingAndAttire: string; // e.g. "Oversized mustard-yellow hooded raincoat with wooden buttons, navy blue rain boots, striped teal scarf"
+  distinctiveFeatures: string; // e.g. "Always carries a glowing brass acorn lantern and a tiny brown leather satchel"
+  colorPalette?: string[];
+  lockedPromptAnchor: string; // The distilled immutable visual anchor prompt injected into all scene drawings
+  isLocked?: boolean;
+}
+
+export interface ExtractedScene {
+  id: string;
+  title: string;
+  excerpt: string;
+  sceneSummary: string;
+  characterNames: string[];
+  suggestedPrompt: string;
+  colorModeRecommendation: 'color' | 'black_and_white';
+  suggestedArtStyle?: string;
+  mood: string;
+  composition: string; // e.g. "Wide cinematic shot", "Medium profile view", "Dynamic close-up action"
+}
+
+export interface ChapterIllustration {
+  id: string;
+  chapterId: string;
+  sceneTitle: string;
+  prompt: string;
+  imageUrl: string;
+  colorMode: 'color' | 'black_and_white';
+  artStyle: string;
+  aspectRatio: string;
+  characterNamesUsed: string[];
+  createdAt: number;
+  insertedInMarkdown?: boolean;
+}
+
+export async function extractCharacterProfilesFromManuscript(
+  manuscriptText: string,
+  bookCategory?: string,
+  apiKey?: string
+): Promise<CharacterProfile[]> {
+  if (!manuscriptText || manuscriptText.trim().length < 50) return [];
+  const ai = getAI(apiKey);
+
+  const isChildren = bookCategory === 'children_stories' || manuscriptText.toLowerCase().includes('picture book') || manuscriptText.toLowerCase().includes('children');
+
+  const prompt = `You are a Lead Character Concept Artist and Visual Designer for ${isChildren ? "top Children's Illustrated Picture Books" : "Bestselling Fiction Novels"}.
+Analyze the following manuscript excerpt and identify all key characters. For each character, create a meticulous, highly detailed visual character sheet and an immutable "lockedPromptAnchor" that will ensure 100% visual consistency across every single illustration in the book.
+
+CRITICAL INSTRUCTIONS FOR CHARACTER COHESION:
+1. Specify exact physical traits (species/type, age/build, facial structure, skin/fur/feather texture and color, eye color/shape, exact hair/quill style).
+2. Specify exact, unchanging signature clothing & accessories (every color, garment, button, hat, shoes, prop).
+3. The "lockedPromptAnchor" MUST be a single dense, vivid descriptive sentence that can be pasted directly into an AI image generator to recreate THIS EXACT SAME CHARACTER every time without alteration.
+
+MANUSCRIPT CONTENT:
+"""
+${manuscriptText.substring(0, 25000)}
+"""
+
+Return a JSON array of character profiles.`;
+
+  try {
+    const response = await withRetry(() => ai.models.generateContent({
+      model: "gemini-3.7-flash",
+      contents: prompt,
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.ARRAY,
+          items: {
+            type: Type.OBJECT,
+            properties: {
+              name: { type: Type.STRING },
+              role: { type: Type.STRING, enum: ["protagonist", "deuteragonist", "supporting", "antagonist", "companion", "guide"] },
+              speciesOrType: { type: Type.STRING },
+              physicalAppearance: { type: Type.STRING },
+              clothingAndAttire: { type: Type.STRING },
+              distinctiveFeatures: { type: Type.STRING },
+              lockedPromptAnchor: { type: Type.STRING }
+            },
+            required: ["name", "physicalAppearance", "clothingAndAttire", "lockedPromptAnchor"]
+          }
+        }
+      }
+    }), !!apiKey);
+
+    const text = (response.text || "[]").replace(/```json/g, '').replace(/```/g, '').trim();
+    const list = JSON.parse(text);
+    if (Array.isArray(list)) {
+      return list.map((c: any) => ({
+        id: 'char_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7),
+        name: c.name || 'Unnamed Character',
+        role: c.role || 'supporting',
+        speciesOrType: c.speciesOrType || 'Human',
+        physicalAppearance: c.physicalAppearance || '',
+        clothingAndAttire: c.clothingAndAttire || '',
+        distinctiveFeatures: c.distinctiveFeatures || '',
+        lockedPromptAnchor: c.lockedPromptAnchor || `${c.name}: ${c.physicalAppearance}, wearing ${c.clothingAndAttire}`,
+        isLocked: true
+      }));
+    }
+    return [];
+  } catch (e) {
+    console.error("Failed to extract characters:", e);
+    return [];
+  }
+}
+
+export async function extractChapterScenesAndMoments(
+  chapterTitle: string,
+  chapterContent: string,
+  existingCharacters: CharacterProfile[] = [],
+  bookCategory: string = 'children_stories',
+  apiKey?: string
+): Promise<ExtractedScene[]> {
+  if (!chapterContent || chapterContent.trim().length < 30) return [];
+  const ai = getAI(apiKey);
+
+  const isChildren = bookCategory === 'children_stories';
+  const charContext = existingCharacters.length > 0
+    ? `\nKNOWN CHARACTER BIBLE (LOCK VISUALS TO THESE):\n` + existingCharacters.map(c => `- ${c.name} (${c.speciesOrType || 'Character'}): ${c.lockedPromptAnchor}`).join('\n')
+    : '';
+
+  const prompt = `You are an elite Children's Book Art Director and Scene Designer.
+Analyze this chapter and identify 2 to 4 key visual moments/scenes that would make captivating, storytelling illustrations.
+
+CHAPTER TITLE: "${chapterTitle}"
+CATEGORY: "${bookCategory}"
+${charContext}
+
+CHAPTER TEXT:
+"""
+${chapterContent.substring(0, 15000)}
+"""
+
+FOR EACH SCENE DETECTED:
+1. Identify the core action, emotional mood, and setting.
+2. Identify which characters from the Character Bible are present in the scene.
+3. Formulate an expert, highly descriptive image generation prompt (suggestedPrompt) capturing the scene's composition, environment, lighting, and exact character actions while incorporating their locked visual traits.
+4. Recommend whether the scene shines in 'color' or 'black_and_white' (e.g. coloring book / ink drawing).
+
+Return a JSON array matching the schema.`;
+
+  try {
+    const response = await withRetry(() => ai.models.generateContent({
+      model: "gemini-3.7-flash",
+      contents: prompt,
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.ARRAY,
+          items: {
+            type: Type.OBJECT,
+            properties: {
+              title: { type: Type.STRING },
+              excerpt: { type: Type.STRING },
+              sceneSummary: { type: Type.STRING },
+              characterNames: { type: Type.ARRAY, items: { type: Type.STRING } },
+              suggestedPrompt: { type: Type.STRING },
+              colorModeRecommendation: { type: Type.STRING, enum: ["color", "black_and_white"] },
+              suggestedArtStyle: { type: Type.STRING },
+              mood: { type: Type.STRING },
+              composition: { type: Type.STRING }
+            },
+            required: ["title", "excerpt", "sceneSummary", "suggestedPrompt", "colorModeRecommendation", "mood"]
+          }
+        }
+      }
+    }), !!apiKey);
+
+    const text = (response.text || "[]").replace(/```json/g, '').replace(/```/g, '').trim();
+    const list = JSON.parse(text);
+    if (Array.isArray(list)) {
+      return list.map((s: any) => ({
+        id: 'scene_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7),
+        title: s.title || 'Scene Moment',
+        excerpt: s.excerpt || '',
+        sceneSummary: s.sceneSummary || '',
+        characterNames: Array.isArray(s.characterNames) ? s.characterNames : [],
+        suggestedPrompt: s.suggestedPrompt || s.sceneSummary,
+        colorModeRecommendation: s.colorModeRecommendation === 'black_and_white' ? 'black_and_white' : 'color',
+        suggestedArtStyle: s.suggestedArtStyle || (isChildren ? 'Whimsical Storybook Watercolor' : 'Digital Illustration'),
+        mood: s.mood || 'Wonder',
+        composition: s.composition || 'Medium shot'
+      }));
+    }
+    return [];
+  } catch (e) {
+    console.error("Failed to extract chapter scenes:", e);
+    return [];
+  }
+}
+
+export async function generateSceneIllustrationWithNanoBanana(params: {
+  scenePrompt: string;
+  chapterTitle?: string;
+  colorMode: 'color' | 'black_and_white';
+  artStyle: string;
+  aspectRatio?: '1:1' | '16:9' | '4:3' | '3:4';
+  charactersInScene?: CharacterProfile[];
+  apiKey?: string;
+}): Promise<string> {
+  const {
+    scenePrompt,
+    chapterTitle = '',
+    colorMode,
+    artStyle,
+    aspectRatio = '4:3',
+    charactersInScene = [],
+    apiKey
+  } = params;
+
+  const ai = getAI(apiKey);
+
+  // 1. Synthesize Nano Banana Art Director prompt enforcing character consistency and color palette
+  let characterConsistencyInstruction = '';
+  if (charactersInScene && charactersInScene.length > 0) {
+    characterConsistencyInstruction = `\nCRITICAL CHARACTER VISUAL CONSISTENCY ANCHORS (MANDATORY EXACT MATCHING):\n` +
+      charactersInScene.map(c => `[CHARACTER "${c.name.toUpperCase()}"]: ${c.lockedPromptAnchor || c.physicalAppearance + ', wearing ' + c.clothingAndAttire}. Maintain exact face structure, hair, colors, proportions, and attire without deviation.`).join('\n') +
+      `\nSTRICT CHARACTER RULE: The above characters MUST be rendered with 100% cohesive, identical physical features and outfits matching their established design across the entire book.\n`;
+  }
+
+  let colorModeDirective = '';
+  if (colorMode === 'black_and_white') {
+    colorModeDirective = `\nCOLOR MODE: STRICT BLACK AND WHITE LINE ART / INK. Clean, high-contrast crisp black line art on a clean white background. Perfect for children's coloring book or classic storybook ink illustration. NO COLOR, NO GRADIENT RAINBOWS, pure black outlines and elegant ink shading/cross-hatching.\n`;
+  } else {
+    colorModeDirective = `\nCOLOR MODE: VIBRANT FULL COLOR. Rich, cohesive, harmonious color palette with cinematic lighting, warm ambient highlights, and captivating visual storytelling depth.\n`;
+  }
+
+  // Engineer the final Master Prompt
+  const masterArtDirectorPrompt = `You are "Nano Banana", an award-winning Children's Book Art Director and Master Illustrator (in the style of Beatrix Potter, Oliver Jeffers, Maurice Sendak, and Pixar).
+Create a single, cohesive, publication-quality chapter illustration for: "${scenePrompt}" (Chapter: "${chapterTitle}").
+Art Style: "${artStyle}".
+${colorModeDirective}
+${characterConsistencyInstruction}
+Composition: Masterful visual storytelling, balanced focal point, rich environmental details, charming expressive character poses, clear readable silhouette.
+Output ONLY the final detailed AI generation prompt string. No code fences, no conversational text.`;
+
+  let engineeredPrompt = scenePrompt;
+  try {
+    const engineeredRes = await withRetry(() => ai.models.generateContent({
+      model: "gemini-3.7-flash",
+      contents: masterArtDirectorPrompt
+    }), !!apiKey);
+    engineeredPrompt = (engineeredRes.text || scenePrompt).trim();
+  } catch (e) {
+    console.warn("Art director prompt engineering failed, using base prompt with directives:", e);
+    engineeredPrompt = `${scenePrompt}. ${colorModeDirective}. Art Style: ${artStyle}. ${characterConsistencyInstruction}`;
+  }
+
+  console.info("Nano Banana final scene prompt:", engineeredPrompt);
+
+  // 2. Call Image Generation Pipeline
+  const imageModels = ["gemini-3.1-flash-image", "gemini-3.1-flash-lite-image", "imagen-3.0-generate-002"];
+  for (const model of imageModels) {
+    try {
+      const response = await withRetry(() => ai.models.generateContent({
+        model,
+        contents: engineeredPrompt,
+        config: {
+          imageConfig: {
+            aspectRatio: aspectRatio === '1:1' ? '1:1' : aspectRatio === '16:9' ? '16:9' : aspectRatio === '3:4' ? '3:4' : '4:3',
+            imageSize: "1K"
+          }
+        }
+      }), !!apiKey);
+
+      for (const part of response.candidates?.[0]?.content?.parts || []) {
+        if (part.inlineData && part.inlineData.data) {
+          return `data:image/jpeg;base64,${part.inlineData.data}`;
+        }
+      }
+    } catch (err: any) {
+      console.warn(`Nano Banana scene generation failed with ${model}:`, err);
+    }
+  }
+
+  // Fallback: Generate bespoke vector SVG illustration if raster image models are unavailable
+  return generateProceduralSceneSvg(scenePrompt, colorMode, artStyle, charactersInScene);
+}
+
+export function generateProceduralSceneSvg(
+  prompt: string,
+  colorMode: 'color' | 'black_and_white',
+  artStyle: string,
+  characters: CharacterProfile[] = []
+): string {
+  const isBW = colorMode === 'black_and_white';
+  const cleanPrompt = prompt.replace(/[<>&'"]/g, '').slice(0, 100);
+  const charNames = characters.map(c => c.name).join(' & ') || 'Story Scene';
+
+  const bgColor = isBW ? '#ffffff' : '#f8fafc';
+  const strokeColor = isBW ? '#111827' : '#4338ca';
+  const accentColor = isBW ? '#374151' : '#f59e0b';
+  const fillColor = isBW ? '#f3f4f6' : '#e0e7ff';
+  const textColor = isBW ? '#111827' : '#1e1b4b';
+
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 900" width="1200" height="900">
+    <defs>
+      <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+        <path d="M 40 0 L 0 0 0 40" fill="none" stroke="${isBW ? '#e5e7eb' : '#e2e8f0'}" stroke-width="1"/>
+      </pattern>
+      <linearGradient id="skyGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+        <stop offset="0%" stop-color="${isBW ? '#ffffff' : '#dbeafe'}"/>
+        <stop offset="100%" stop-color="${isBW ? '#f9fafb' : '#fef3c7'}"/>
+      </linearGradient>
+    </defs>
+    
+    <!-- Background Canvas -->
+    <rect width="1200" height="900" fill="url(#skyGrad)"/>
+    <rect width="1200" height="900" fill="url(#grid)" opacity="0.4"/>
+    
+    <!-- Outer Frame -->
+    <rect x="20" y="20" width="1160" height="860" rx="16" fill="none" stroke="${strokeColor}" stroke-width="${isBW ? '4' : '3'}"/>
+    <rect x="32" y="32" width="1136" height="836" rx="12" fill="none" stroke="${strokeColor}" stroke-width="1" stroke-dasharray="6 6"/>
+
+    <!-- Gentle Rolling Hills / Ground -->
+    <path d="M 20 680 Q 300 620, 600 660 T 1180 640 L 1180 880 L 20 880 Z" fill="${fillColor}" stroke="${strokeColor}" stroke-width="${isBW ? '3' : '2'}"/>
+    <path d="M 20 740 Q 400 700, 800 730 T 1180 720 L 1180 880 L 20 880 Z" fill="${isBW ? '#ffffff' : '#ecfdf5'}" stroke="${strokeColor}" stroke-width="${isBW ? '2' : '1.5'}"/>
+
+    <!-- Sun / Moon Crest -->
+    <circle cx="980" cy="180" r="70" fill="${isBW ? '#ffffff' : '#fef08a'}" stroke="${strokeColor}" stroke-width="${isBW ? '3' : '2'}"/>
+    ${isBW ? `<path d="M 980 90 L 980 70 M 980 270 L 980 290 M 890 180 L 870 180 M 1070 180 L 1090 180" stroke="${strokeColor}" stroke-width="3"/>` : ''}
+
+    <!-- Whimsical Trees / Scenery -->
+    <g transform="translate(180, 520)">
+      <rect x="-10" y="60" width="20" height="100" fill="${isBW ? '#ffffff' : '#78350f'}" stroke="${strokeColor}" stroke-width="3"/>
+      <circle cx="0" cy="20" r="60" fill="${isBW ? '#ffffff' : '#a7f3d0'}" stroke="${strokeColor}" stroke-width="3"/>
+      <circle cx="-25" cy="0" r="45" fill="${isBW ? '#ffffff' : '#6ee7b7'}" stroke="${strokeColor}" stroke-width="2"/>
+      <circle cx="25" cy="0" r="45" fill="${isBW ? '#ffffff' : '#34d399'}" stroke="${strokeColor}" stroke-width="2"/>
+    </g>
+    <g transform="translate(1000, 560) scale(0.85)">
+      <rect x="-10" y="60" width="20" height="100" fill="${isBW ? '#ffffff' : '#78350f'}" stroke="${strokeColor}" stroke-width="3"/>
+      <circle cx="0" cy="20" r="60" fill="${isBW ? '#ffffff' : '#a7f3d0'}" stroke="${strokeColor}" stroke-width="3"/>
+    </g>
+
+    <!-- Central Character Spot / Storybook Character Silhouette -->
+    <g transform="translate(600, 580)">
+      <!-- Ground Shadow / Base -->
+      <ellipse cx="0" cy="110" rx="90" ry="18" fill="${isBW ? '#e5e7eb' : '#cbd5e1'}" stroke="${strokeColor}" stroke-width="1"/>
+      
+      <!-- Character Body -->
+      <circle cx="0" cy="30" r="55" fill="${fillColor}" stroke="${strokeColor}" stroke-width="${isBW ? '4' : '3'}"/>
+      <!-- Character Head -->
+      <circle cx="0" cy="-45" r="40" fill="${isBW ? '#ffffff' : '#fed7aa'}" stroke="${strokeColor}" stroke-width="${isBW ? '4' : '3'}"/>
+      <!-- Eyes -->
+      <circle cx="-14" cy="-50" r="6" fill="${strokeColor}"/>
+      <circle cx="14" cy="-50" r="6" fill="${strokeColor}"/>
+      <!-- Cheerful Smile -->
+      <path d="M -14 -32 Q 0 -18, 14 -32" fill="none" stroke="${strokeColor}" stroke-width="3" stroke-linecap="round"/>
+      <!-- Hat / Distinctive Feature -->
+      <path d="M -40 -70 Q 0 -110, 40 -70 Z" fill="${accentColor}" stroke="${strokeColor}" stroke-width="3"/>
+      <circle cx="0" cy="-110" r="10" fill="${isBW ? '#ffffff' : '#f43f5e'}" stroke="${strokeColor}" stroke-width="2"/>
+      <!-- Small Lantern / Prop in Hand -->
+      <g transform="translate(60, 20)">
+        <rect x="-12" y="-16" width="24" height="32" rx="4" fill="${isBW ? '#ffffff' : '#fef08a'}" stroke="${strokeColor}" stroke-width="2"/>
+        <path d="M -8 -16 Q 0 -26, 8 -16" fill="none" stroke="${strokeColor}" stroke-width="2"/>
+        <circle cx="0" cy="0" r="4" fill="${accentColor}"/>
+      </g>
+    </g>
+
+    <!-- Storybook Caption Plaque -->
+    <rect x="150" y="740" width="900" height="100" rx="16" fill="${isBW ? '#ffffff' : '#ffffff'}" stroke="${strokeColor}" stroke-width="2" filter="drop-shadow(0 4px 6px rgba(0,0,0,0.1))"/>
+    <text x="600" y="775" font-family="'Plus Jakarta Sans', system-ui, sans-serif" font-size="18" font-weight="800" fill="${textColor}" text-anchor="middle" letter-spacing="1">
+      ${charNames.toUpperCase()} — ${isBW ? 'BLACK & WHITE STORYBOOK ILLUSTRATION' : 'FULL COLOR SCENE'}
+    </text>
+    <text x="600" y="810" font-family="'Georgia', serif" font-size="14" font-style="italic" fill="${isBW ? '#4b5563' : '#6366f1'}" text-anchor="middle">
+      "${cleanPrompt}..."
+    </text>
+  </svg>`;
+
+  return `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(svg)))}`;
 }
 
 
