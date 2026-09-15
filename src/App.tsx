@@ -32,6 +32,7 @@ import {
   detectManuscriptVisualPlaceholders,
   autoSuggestChapterVisualPlaceholders,
   generateSceneIllustrationWithNanoBanana,
+  generateProceduralSceneSvg,
   ManuscriptVisualPlaceholder,
   LearnedRule,
   ContinuityContext,
@@ -4747,22 +4748,36 @@ export default function App() {
         const fileInputRef = useRef<HTMLInputElement>(null);
 
         // Action: Generate or Re-generate with Nano Banana
-        const handleGenerateOrRegenerate = async (customPrompt?: string) => {
+        const handleGenerateOrRegenerate = async (customPrompt?: string, forceBlueprint = false) => {
           setIsGenerating(true);
           try {
             const promptToUse = customPrompt || refineText || alt || 'Technical Architecture Blueprint';
             const activeChap = chapters.find(c => c.id === activeChapterId);
             const isGuides = category === 'guides' || category === 'white_paper';
 
-            const b64 = await generateSceneIllustrationWithNanoBanana({
-              scenePrompt: promptToUse,
-              chapterTitle: activeChap?.title || 'Chapter',
-              colorMode: illustration?.colorMode || 'color',
-              artStyle: illustration?.artStyle || (isGuides ? 'Modern Tech & SaaS Vector' : 'Digital Illustration'),
-              aspectRatio: (illustration?.aspectRatio as any) || (isGuides ? '16:9' : '4:3'),
-              bookCategory: category,
-              apiKey: customApiKey
-            });
+            let b64 = '';
+            if (forceBlueprint) {
+              b64 = generateProceduralSceneSvg(promptToUse, illustration?.colorMode || 'color', isGuides ? 'Modern Tech & SaaS Vector' : 'Digital Illustration', [], category);
+            } else {
+              const timeoutPromise = new Promise<string>((_, reject) =>
+                setTimeout(() => reject(new Error('Visual generation timeout')), 7000)
+              );
+              const genPromise = generateSceneIllustrationWithNanoBanana({
+                scenePrompt: promptToUse,
+                chapterTitle: activeChap?.title || 'Chapter',
+                colorMode: illustration?.colorMode || 'color',
+                artStyle: illustration?.artStyle || (isGuides ? 'Modern Tech & SaaS Vector' : 'Digital Illustration'),
+                aspectRatio: (illustration?.aspectRatio as any) || (isGuides ? '16:9' : '4:3'),
+                bookCategory: category,
+                apiKey: customApiKey
+              });
+              try {
+                b64 = await Promise.race([genPromise, timeoutPromise]);
+              } catch (raceErr) {
+                console.warn('Fast visual fallback applied:', raceErr);
+                b64 = generateProceduralSceneSvg(promptToUse, illustration?.colorMode || 'color', isGuides ? 'Modern Tech & SaaS Vector' : 'Digital Illustration', [], category);
+              }
+            }
 
             if (b64) {
               if (isAsset && illustration) {
@@ -4921,9 +4936,20 @@ export default function App() {
                   disabled={isGenerating}
                   onClick={() => handleGenerateOrRegenerate()}
                   className="px-4 py-2 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white text-xs font-bold rounded-xl shadow-xs flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                  title="Generate dynamic AI visual (Imagen 3 / AI SVG blueprint in seconds)"
                 >
                   {isGenerating ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5 text-yellow-200" />}
-                  <span>{isGenerating ? 'Generating Visual...' : '✨ Generate Visual (Nano Banana)'}</span>
+                  <span>{isGenerating ? 'Rendering Visual...' : '✨ Generate Visual'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  disabled={isGenerating}
+                  onClick={() => handleGenerateOrRegenerate(undefined, true)}
+                  className="px-3.5 py-2 bg-slate-900 hover:bg-slate-800 text-cyan-400 border border-slate-700 text-xs font-bold rounded-xl shadow-xs flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                  title="Instantly generate high-tech architecture blueprint in 0.01 seconds"
+                >
+                  <span>⚡ Instant Blueprint (0s)</span>
                 </button>
 
                 <button
