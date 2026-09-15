@@ -730,8 +730,17 @@ function ChapterView({
   const [isEditing, setIsEditing] = useState(false);
   const isAuthorPage = chapter.title.toLowerCase().includes('about the author');
 
+  // Normalize bracketed tags [IMAGE: ...], [VISUAL: ...], [ILLUSTRATION: ...], [FIGURE: ...] into markdown image placeholders
+  const renderedContent = useMemo(() => {
+    if (!chapter.content) return '';
+    return chapter.content.replace(/\[(?:IMAGE|ILLUSTRATION|VISUAL|FIGURE):\s*([^\]]+)\]/gi, (_, desc) => {
+      const phId = 'ph_' + desc.toLowerCase().replace(/[^a-z0-9]/g, '_').slice(0, 30);
+      return `![${desc.trim()}](placeholder:${phId})`;
+    });
+  }, [chapter.content]);
+
   const report = useMemo(() => analyzeAiScore(chapter.content), [chapter.content]);
-  const placeholders = useMemo(() => detectManuscriptVisualPlaceholders(chapter.content), [chapter.content]);
+  const placeholders = useMemo(() => detectManuscriptVisualPlaceholders(renderedContent), [renderedContent]);
 
   return (
     <div className="space-y-4">
@@ -884,7 +893,7 @@ function ChapterView({
           />
         ) : (
           <div className="p-4 sm:p-8 prose prose-zinc max-w-none prose-sm sm:prose-base">
-            <Markdown components={components}>{chapter.content}</Markdown>
+            <Markdown components={components}>{renderedContent}</Markdown>
           </div>
         )}
       </div>
@@ -2641,15 +2650,21 @@ export default function App() {
       for (let i = 0; i < placeholders.length; i++) {
         const ph = placeholders[i];
         setHistoryNotice(`Generating visual ${i + 1} of ${placeholders.length}: "${ph.description.slice(0, 30)}..."`);
-        const b64 = await generateSceneIllustrationWithNanoBanana({
-          scenePrompt: ph.description || 'Technical Diagram',
-          chapterTitle: targetChapter.title,
-          colorMode: 'color',
-          artStyle: isGuides ? 'Modern Tech & SaaS Vector' : 'Digital Illustration',
-          aspectRatio: isGuides ? '16:9' : '4:3',
-          bookCategory: category,
-          apiKey: customApiKey
-        });
+        let b64 = '';
+        try {
+          b64 = await generateSceneIllustrationWithNanoBanana({
+            scenePrompt: ph.description || 'Technical Diagram',
+            chapterTitle: targetChapter.title,
+            colorMode: 'color',
+            artStyle: isGuides ? 'Modern Tech & SaaS Vector' : 'Digital Illustration',
+            aspectRatio: isGuides ? '16:9' : '4:3',
+            bookCategory: category,
+            apiKey: customApiKey
+          });
+        } catch (itemErr) {
+          console.warn("Item generation fallback applied:", itemErr);
+          b64 = generateProceduralSceneSvg(ph.description || 'Technical Diagram', 'color', isGuides ? 'Modern Tech & SaaS Vector' : 'Digital Illustration', [], category);
+        }
 
         if (b64) {
           const newId = 'illus_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
@@ -2667,6 +2682,14 @@ export default function App() {
             insertedInMarkdown: true
           };
           newIllustrations.push(newIll);
+
+          setImageBag(prev => ({
+            ...prev,
+            [newId]: b64,
+            [ph.description]: b64,
+            [ph.placeholderId]: b64,
+            [ph.rawMatch]: b64
+          }));
 
           currentContent = currentContent.replace(ph.rawMatch, `![${ph.description}](asset:${newId})`);
         }
@@ -4684,7 +4707,7 @@ export default function App() {
         const isPlaceholder = src.startsWith('placeholder:') || src === 'placeholder' || src === '';
 
         const illustration = isAsset ? chapterIllustrations.find(i => i.id === assetId) : undefined;
-        const storedImage = illustration?.imageUrl || imageBag[altId] || (src.startsWith('data:') || src.startsWith('http') ? src : null);
+        const storedImage = illustration?.imageUrl || imageBag[altId] || imageBag[src] || imageBag[alt] || (src.startsWith('data:') || src.startsWith('http') ? src : null);
 
         const [isGenerating, setIsGenerating] = useState(false);
         const [isEditingPrompt, setIsEditingPrompt] = useState(false);
@@ -4704,7 +4727,7 @@ export default function App() {
               b64 = generateProceduralSceneSvg(promptToUse, illustration?.colorMode || 'color', isGuides ? 'Modern Tech & SaaS Vector' : 'Digital Illustration', [], category);
             } else {
               const timeoutPromise = new Promise<string>((_, reject) =>
-                setTimeout(() => reject(new Error('Visual generation timeout')), 7000)
+                setTimeout(() => reject(new Error('Visual generation timeout')), 20000)
               );
               const genPromise = generateSceneIllustrationWithNanoBanana({
                 scenePrompt: promptToUse,
@@ -4724,6 +4747,15 @@ export default function App() {
             }
 
             if (b64) {
+              // Immediately bridge image into local imageBag so UI flips to rendered view instantly
+              setImageBag(prev => ({
+                ...prev,
+                [altId]: b64,
+                [src]: b64,
+                [alt]: b64,
+                [assetId || '']: b64
+              }));
+
               if (isAsset && illustration) {
                 // Update existing illustration in-place
                 const updated = chapterIllustrations.map(i => i.id === assetId ? { ...i, imageUrl: b64, prompt: promptToUse } : i);
@@ -4751,13 +4783,22 @@ export default function App() {
                 if (activeChapterId) {
                   setChapters(prev => prev.map(c => {
                     if (c.id !== activeChapterId) return c;
-                    const escapedSrc = src.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-                    const pattern = new RegExp(`!\\[[^\\]]*\\]\\(${escapedSrc}\\)`, 'g');
-                    let newContent = c.content.replace(pattern, `![${alt}](asset:${newId})`);
-                    if (newContent === c.content) {
+                    let newContent = c.content;
+                    if (src) {
+                      const escapedSrc = src.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                      newContent = newContent.replace(new RegExp(`!\\[[^\\]]*\\]\\(${escapedSrc}\\)`, 'g'), `![${alt}](asset:${newId})`);
+                    }
+                    if (newContent === c.content && alt) {
                       const escapedAlt = alt.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-                      const altPattern = new RegExp(`!\\[${escapedAlt}\\]\\([^\\)]*\\)`, 'g');
-                      newContent = c.content.replace(altPattern, `![${alt}](asset:${newId})`);
+                      newContent = newContent.replace(new RegExp(`!\\[${escapedAlt}\\]\\([^\\)]*\\)`, 'g'), `![${alt}](asset:${newId})`);
+                    }
+                    if (newContent === c.content && src.startsWith('placeholder:')) {
+                      const phId = src.replace('placeholder:', '');
+                      newContent = newContent.replace(new RegExp(`!\\[[^\\]]*\\]\\(placeholder:${phId}\\)`, 'g'), `![${alt}](asset:${newId})`);
+                    }
+                    if (newContent === c.content && alt) {
+                      const escapedAlt = alt.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                      newContent = newContent.replace(new RegExp(`\\[(?:IMAGE|ILLUSTRATION|VISUAL|FIGURE):\\s*${escapedAlt}\\]`, 'gi'), `![${alt}](asset:${newId})`);
                     }
                     return { ...c, content: newContent };
                   }));
@@ -4782,6 +4823,13 @@ export default function App() {
           const reader = new FileReader();
           reader.onload = (event) => {
             const dataUrl = event.target?.result as string;
+            setImageBag(prev => ({
+              ...prev,
+              [altId]: dataUrl,
+              [src]: dataUrl,
+              [alt]: dataUrl,
+              [assetId || '']: dataUrl
+            }));
             if (isAsset && illustration) {
               const updated = chapterIllustrations.map(i => i.id === assetId ? { ...i, imageUrl: dataUrl } : i);
               setChapterIllustrations(updated);
@@ -4804,13 +4852,14 @@ export default function App() {
               if (activeChapterId) {
                 setChapters(prev => prev.map(c => {
                   if (c.id !== activeChapterId) return c;
-                  const escapedSrc = src.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-                  const pattern = new RegExp(`!\\[[^\\]]*\\]\\(${escapedSrc}\\)`, 'g');
-                  let newContent = c.content.replace(pattern, `![${alt}](asset:${newId})`);
-                  if (newContent === c.content) {
+                  let newContent = c.content;
+                  if (src) {
+                    const escapedSrc = src.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                    newContent = newContent.replace(new RegExp(`!\\[[^\\]]*\\]\\(${escapedSrc}\\)`, 'g'), `![${alt}](asset:${newId})`);
+                  }
+                  if (newContent === c.content && alt) {
                     const escapedAlt = alt.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-                    const altPattern = new RegExp(`!\\[${escapedAlt}\\]\\([^\\)]*\\)`, 'g');
-                    newContent = c.content.replace(altPattern, `![${alt}](asset:${newId})`);
+                    newContent = newContent.replace(new RegExp(`!\\[${escapedAlt}\\]\\([^\\)]*\\)`, 'g'), `![${alt}](asset:${newId})`);
                   }
                   return { ...c, content: newContent };
                 }));

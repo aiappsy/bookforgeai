@@ -30,7 +30,8 @@ import {
   ChapterIllustration,
   extractCharacterProfilesFromManuscript,
   extractChapterScenesAndMoments,
-  generateSceneIllustrationWithNanoBanana
+  generateSceneIllustrationWithNanoBanana,
+  generateProceduralSceneSvg
 } from '../services/geminiService';
 
 interface ChapterItem {
@@ -351,8 +352,34 @@ export const VisualDesignerStudio: React.FC<VisualDesignerStudioProps> = ({
       } else {
         showToast("Failed to generate visual. Please try another prompt.");
       }
-    } catch (e) {
-      console.error(e);
+    } catch (e: any) {
+      console.warn("Visual Studio generation fallback to procedural SVG:", e);
+      try {
+        const activeCharacters = hasCharacters ? characterBible.filter(c => selectedCharIds.includes(c.id)) : [];
+        const fallbackUrl = generateProceduralSceneSvg(basePrompt, colorMode, selectedArtStyle, activeCharacters, bookCategory);
+        if (fallbackUrl) {
+          const newIllustration: ChapterIllustration = {
+            id: 'illus_' + Date.now(),
+            chapterId: selectedChapterId,
+            sceneTitle: selectedScene?.title || `Visual for ${currentChapter?.title || 'Chapter'}`,
+            prompt: basePrompt,
+            imageUrl: fallbackUrl,
+            colorMode,
+            artStyle: selectedArtStyle,
+            aspectRatio,
+            characterNamesUsed: activeCharacters.map(c => c.name),
+            createdAt: Date.now(),
+            insertedInMarkdown: false
+          };
+          setLatestGeneratedImage(fallbackUrl);
+          onUpdateIllustrations([newIllustration, ...chapterIllustrations]);
+          showToast("Generated architectural visual schematic!");
+          setFeedbackInput('');
+          return;
+        }
+      } catch (fbErr) {
+        console.error(fbErr);
+      }
       showToast("Generation error occurred. Please try again.");
     } finally {
       setIsGeneratingIllustration(false);

@@ -1100,11 +1100,12 @@ CRITICAL MANDATORY RULES FOR ALL EDITS:
    - When rewriting, editing, or polishing any chapter, maintain total narrative, thematic, chronological, and stylistic cohesion with the surrounding chapters and full book outline.
    - Do NOT introduce plot contradictions, retcon established facts, repeat introductory explanations already covered in earlier chapters, or disrupt the narrative flow and character arcs established across the book.
    - Maintain consistent character motivations, tone, vocabulary level, and narrative rhythm throughout the rewrite.
-10. MANDATORY NON-LETTER / DIAGRAM / TABLE FORMATTING RULES:
-   - Whenever including non-letter content such as ASCII diagrams, flowcharts, schemas, or architectural figures, ALWAYS enclose them inside explicit Markdown code blocks (\`\`\`text ... \`\`\`) with monospace alignment.
-   - Format data grids, metrics, and matrices as clean Markdown tables (| Col 1 | Col 2 |).
-   - Enclose quotes, key insights, and mandates in Markdown blockquotes (> ...).
-   - Never output raw unformatted ASCII art or malformed/empty image tags.`;
+10. CODE BOXES & VISUAL DIAGRAM FORMATTING:
+   - FORMAT DATA GRIDS AS CLEAN MARKDOWN TABLES (| Col 1 | Col 2 |).
+   - ENCLOSE QUOTES & KEY INSIGHTS IN BLOCKQUOTES (> ...).
+   - NEVER create dark terminal code blocks (```bash ... ``` or ```text ... ```) unless the user explicitly requests code or shell commands.
+   - BOX & CODE BLOCK REMOVAL: If the user asks to "remove boxes", "remove code blocks", "delete the boxes", "strip code blocks", or "unwrap boxes", you MUST strip all ``` code block fences, unwrapping the text into clean, flowing Markdown paragraphs, blockquotes (> ...), or tables.
+   - MANDATORY TOOL INVOCATION: When asked to edit, remove boxes, rewrite, or polish, you MUST invoke 'updateChapter' or 'updateMultipleChapters' to write the revised text back into the manuscript!`;
 
   const artDirectorInstruction = `You are an elite Art Director and Visual Concept Designer.
 The user is working on a ${documentType}.
@@ -1139,7 +1140,6 @@ ALWAYS USE THIS EXACT MARKDOWN FORMAT: ![Detailed prompt describing the visual](
       model: modelName,
       contents: [...formattedHistory, { role: 'user', parts: userParts }],
       config: {
-        thinkingConfig: { thinkingBudget: 2048 },
         systemInstruction,
         tools: toolsList
       }
@@ -1203,24 +1203,51 @@ ALWAYS USE THIS EXACT MARKDOWN FORMAT: ![Detailed prompt describing the visual](
     }
   }
 
-  // Intelligent Failsafe: If no tool call was triggered, parse markdown code blocks or structured chapters directly from text
+  // Intelligent Failsafe: If no tool call was triggered, handle box removal or parse markdown
   if (updatedChapters.length === 0 && !revisedContent && !updatedOutline) {
-    const codeBlockRegex = /```(?:markdown|text)?\n([\s\S]*?)```/g;
-    let match;
-    const extractedBlocks: string[] = [];
-    while ((match = codeBlockRegex.exec(replyText)) !== null) {
-      if (match[1] && match[1].trim().length > 30) {
-        extractedBlocks.push(match[1].trim());
+    // 1. Direct surgical box unwrap if user asked to remove/strip boxes or code blocks
+    const isBoxRemovalRequest = /(remove|delete|strip|get rid of|unwrap|take away|eliminate)\s+(the\s+)?(boxes|box|code\s*blocks?|terminal\s*blocks?|ascii\s*boxes?)/i.test(message);
+    if (isBoxRemovalRequest && activeChapterObj && activeChapterObj.content) {
+      const unwrapped = activeChapterObj.content.replace(/```(?:[a-zA-Z0-9_-]+)?\n([\s\S]*?)```/g, (_, codeContent) => {
+        const trimmed = codeContent.trim();
+        // Convert to clean quote or prose
+        return `\n\n> ${trimmed.split('\n').join('\n> ')}\n\n`;
+      });
+      if (unwrapped !== activeChapterObj.content) {
+        updatedChapters.push({
+          id: activeChapterObj.id,
+          title: activeChapterObj.title,
+          content: unwrapped
+        });
+        revisedContent = unwrapped;
+        replyText = `✓ Successfully removed all code boxes from "${activeChapterObj.title}" and formatted the content as clean readable prose.`;
       }
     }
 
-    if (extractedBlocks.length > 0) {
-      if (documentType === 'outline') {
-        updatedOutline = extractedBlocks[0];
-        revisedContent = extractedBlocks[0];
-      } else if (activeChapterId) {
-        updatedChapters.push({ id: activeChapterId, content: extractedBlocks[0] });
-        revisedContent = extractedBlocks[0];
+    // 2. Parse markdown code blocks from model reply
+    if (updatedChapters.length === 0 && !revisedContent && !updatedOutline) {
+      const codeBlockRegex = /```(?:markdown|text)?\n([\s\S]*?)```/g;
+      let match;
+      const extractedBlocks: string[] = [];
+      while ((match = codeBlockRegex.exec(replyText)) !== null) {
+        if (match[1] && match[1].trim().length > 30) {
+          extractedBlocks.push(match[1].trim());
+        }
+      }
+
+      if (extractedBlocks.length > 0) {
+        if (documentType === 'outline') {
+          updatedOutline = extractedBlocks[0];
+          revisedContent = extractedBlocks[0];
+        } else if (activeChapterId) {
+          updatedChapters.push({ id: activeChapterId, content: extractedBlocks[0] });
+          revisedContent = extractedBlocks[0];
+        }
+      } else if (activeChapterObj && replyText.trim().startsWith('#') && replyText.length > 300) {
+        // Model emitted raw markdown directly into conversation
+        updatedChapters.push({ id: activeChapterObj.id, title: activeChapterObj.title, content: replyText.trim() });
+        revisedContent = replyText.trim();
+        replyText = `✓ Applied revision to "${activeChapterObj.title}".`;
       }
     }
   }
@@ -3239,7 +3266,7 @@ Output ONLY the final detailed AI generation prompt string. No code fences, no c
 
   console.info("Nano Banana scene generation request:", engineeredPrompt);
 
-  // 1. Race Imagen 3 with a strict 6-second timeout (if supported/enabled on user's key)
+  // 1. Race Imagen 3 with a 14-second window (if supported/enabled on user's key)
   try {
     if ((ai.models as any).generateImages) {
       const imagenPromise = (ai.models as any).generateImages({
@@ -3253,7 +3280,7 @@ Output ONLY the final detailed AI generation prompt string. No code fences, no c
       });
 
       const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('Imagen timeout')), 6000)
+        setTimeout(() => reject(new Error('Imagen timeout')), 14000)
       );
 
       const imgRes: any = await Promise.race([imagenPromise, timeoutPromise]);
@@ -3278,7 +3305,7 @@ Category: ${bookCategory}. Art Style: ${artStyle}.
 DESIGN INSTRUCTIONS:
 1. Palette: ${isTech ? (colorMode === 'black_and_white' ? 'Monochrome Blueprint (dark slate #0f172a lines on pure white canvas, precision grid)' : 'Modern Dark Mode Developer Palette (canvas #090d16, containers #1e293b with borders #334155, cyan-400 #22d3ee highlights, indigo-400 #818cf8 accents, emerald-400 #34d399 status pills, clean white #f8fafc text)') : (colorMode === 'black_and_white' ? 'Clean black and white ink line art' : 'Rich, harmonious, vibrant story color palette')}.
 2. Visual Structure:
-   - Top header bar with visual title, status pill, and category badge
+   - Top header bar with visual title matching the prompt, status pill, and category badge
    - 3 to 4 modular cards / architecture blocks representing the components in the prompt
    - Clean connecting paths, arrows, or flow indicators with markers
    - Clear legible typography (<text> tags with system-ui or monospace fonts)
@@ -3286,7 +3313,7 @@ DESIGN INSTRUCTIONS:
 3. Output Format: Return ONLY raw XML SVG starting with <svg> and ending with </svg>. No markdown code fences, no introductory or concluding remarks.`;
 
     const svgTimeout = new Promise((_, reject) =>
-      setTimeout(() => reject(new Error('SVG AI timeout')), 5000)
+      setTimeout(() => reject(new Error('SVG AI timeout')), 6000)
     );
 
     const svgPromise = ai.models.generateContent({
@@ -3296,11 +3323,10 @@ DESIGN INSTRUCTIONS:
 
     const svgRes: any = await Promise.race([svgPromise, svgTimeout]);
     const rawText = svgRes?.candidates?.[0]?.content?.parts?.[0]?.text || '';
-    const match = rawText.match(/<svg[\s\S]*?<\/svg>/i);
-    if (match && match[0]) {
-      const cleanSvg = match[0].trim();
+    const cleanUri = sanitizeSvgToDataUri(rawText);
+    if (cleanUri) {
       console.info("Gemini AI successfully generated custom vector SVG visual for scene!");
-      return `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(cleanSvg)))}`;
+      return cleanUri;
     }
   } catch (svgErr) {
     console.warn("AI dynamic SVG generation skipped or timed out, using procedural blueprint:", svgErr);
@@ -3308,6 +3334,28 @@ DESIGN INSTRUCTIONS:
 
   // 3. Guaranteed Immediate Fallback: Category-aware procedural SVG (0ms latency, 100% success)
   return generateProceduralSceneSvg(scenePrompt, colorMode, artStyle, charactersInScene, bookCategory);
+}
+
+export function sanitizeSvgToDataUri(rawSvg: string): string {
+  if (!rawSvg) return '';
+  let clean = rawSvg.trim();
+  const match = clean.match(/<svg[\s\S]*?<\/svg>/i);
+  if (match) {
+    clean = match[0];
+  } else {
+    return '';
+  }
+  if (!clean.includes('xmlns=')) {
+    clean = clean.replace('<svg', '<svg xmlns="http://www.w3.org/2000/svg"');
+  }
+  // Replace raw unescaped & that isn't already an entity
+  clean = clean.replace(/&(?!(amp|lt|gt|quot|apos|#\d+|#x[0-9a-fA-F]+);)/g, '&amp;');
+  try {
+    return `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(clean)))}`;
+  } catch (e) {
+    console.warn("Failed to base64 encode SVG:", e);
+    return '';
+  }
 }
 
 export function generateProceduralSceneSvg(
@@ -3318,8 +3366,14 @@ export function generateProceduralSceneSvg(
   bookCategory: string = 'guides'
 ): string {
   const isBW = colorMode === 'black_and_white';
-  const cleanPrompt = prompt.replace(/[<>&'"]/g, '').slice(0, 90);
+  const cleanPrompt = prompt.replace(/[<>&'"]/g, '').slice(0, 80);
   const isGuides = bookCategory === 'guides' || bookCategory === 'white_paper' || bookCategory === 'non_fiction';
+
+  // Break prompt into key conceptual phrases for dynamic node labels
+  const words = cleanPrompt.split(/\s+/).filter(w => w.length > 2);
+  const node1Title = (words.slice(0, 3).join(' ') || 'Input & Source').toUpperCase();
+  const node2Title = (words.slice(3, 6).join(' ') || 'Core Processing').toUpperCase();
+  const node3Title = (words.slice(6, 10).join(' ') || 'Output & Result').toUpperCase();
 
   if (isGuides) {
     // High-tech modern dark-mode system architecture blueprint
@@ -3354,14 +3408,14 @@ export function generateProceduralSceneSvg(
       <circle cx="70" cy="65" r="14" fill="${accent}" opacity="0.2"/>
       <circle cx="70" cy="65" r="6" fill="${accent}"/>
       <text x="100" y="60" font-family="'Plus Jakarta Sans', system-ui, sans-serif" font-size="16" font-weight="800" fill="${textMain}" letter-spacing="0.5">
-        SYSTEM ARCHITECTURE &amp; TOPOLOGY BLUEPRINT
+        TOPOLOGY &amp; ARCHITECTURAL SPECIFICATION
       </text>
       <text x="100" y="80" font-family="system-ui, sans-serif" font-size="12" fill="${textMuted}">
         ${cleanPrompt}
       </text>
       <rect x="1010" y="48" width="130" height="34" rx="8" fill="${isBW ? '#e2e8f0' : '#1e293b'}"/>
       <text x="1075" y="70" font-family="monospace" font-size="11" font-weight="700" fill="${accent}" text-anchor="middle">
-        VERIFIED ARCH
+        VERIFIED SPEC
       </text>
 
       <!-- Connection Lines -->
@@ -3369,102 +3423,101 @@ export function generateProceduralSceneSvg(
       <path d="M 730 285 L 830 285" stroke="${accent}" stroke-width="2.5" stroke-dasharray="6 4" marker-end="url(#arrow)"/>
       <path d="M 600 395 L 600 460" stroke="${subAccent}" stroke-width="2" stroke-dasharray="4 4"/>
 
-      <!-- Node 1: Antigravity Agent & Workspace -->
+      <!-- Node 1 -->
       <g transform="translate(100, 160)">
         <rect width="270" height="250" rx="16" fill="${cardBg}" stroke="${border}" stroke-width="2"/>
         <rect width="270" height="40" rx="16" fill="${isBW ? '#e2e8f0' : '#1e293b'}"/>
-        <text x="20" y="26" font-family="system-ui, sans-serif" font-size="13" font-weight="700" fill="${accent}">
-          01. ANTIGRAVITY AGENT
+        <text x="20" y="26" font-family="system-ui, sans-serif" font-size="12" font-weight="700" fill="${accent}">
+          01. STAGE ONE
         </text>
-        <text x="20" y="70" font-family="system-ui, sans-serif" font-size="15" font-weight="700" fill="${textMain}">
-          Autonomous IDE Core
+        <text x="20" y="70" font-family="system-ui, sans-serif" font-size="14" font-weight="700" fill="${textMain}">
+          ${node1Title}
         </text>
         <text x="20" y="95" font-family="monospace" font-size="11" fill="${textMuted}">
-          • Planning vs Execution Mode
+          • Data Ingestion &amp; Payload
         </text>
         <text x="20" y="120" font-family="monospace" font-size="11" fill="${textMuted}">
-          • Subagent Orchestration
+          • Schema Validation
         </text>
         <text x="20" y="145" font-family="monospace" font-size="11" fill="${textMuted}">
-          • Workspace Worktree Sync
+          • Event Streaming Bridge
         </text>
         <rect x="20" y="180" width="230" height="45" rx="8" fill="${isBW ? '#ffffff' : '#090d16'}" stroke="${border}"/>
         <text x="35" y="208" font-family="monospace" font-size="11" fill="${accent}">
-          Status: ACTIVE PAIR-PROGRAMMER
+          Status: OPERATIONAL
         </text>
       </g>
 
-      <!-- Node 2: Gemini Reasoning & Inference Engine -->
+      <!-- Node 2 -->
       <g transform="translate(470, 160)">
         <rect width="260" height="250" rx="16" fill="${cardBg}" stroke="url(#glowGrad)" stroke-width="2"/>
         <rect width="260" height="40" rx="16" fill="${isBW ? '#e2e8f0' : '#1e293b'}"/>
-        <text x="20" y="26" font-family="system-ui, sans-serif" font-size="13" font-weight="700" fill="${subAccent}">
-          02. GEMINI ENGINE
+        <text x="20" y="26" font-family="system-ui, sans-serif" font-size="12" font-weight="700" fill="${subAccent}">
+          02. CORE ENGINE
         </text>
-        <text x="20" y="70" font-family="system-ui, sans-serif" font-size="15" font-weight="700" fill="${textMain}">
-          Multimodal API Layer
+        <text x="20" y="70" font-family="system-ui, sans-serif" font-size="14" font-weight="700" fill="${textMain}">
+          ${node2Title}
         </text>
         <text x="20" y="95" font-family="monospace" font-size="11" fill="${textMuted}">
-          • Gemini 2.5 Flash / Pro
+          • Transformation Pipeline
         </text>
         <text x="20" y="120" font-family="monospace" font-size="11" fill="${textMuted}">
-          • Structured JSON Schemas
+          • Distributed State Storage
         </text>
         <text x="20" y="145" font-family="monospace" font-size="11" fill="${textMuted}">
-          • Autonomous Tool Calling
+          • Low-Latency Execution
         </text>
         <rect x="20" y="180" width="220" height="45" rx="8" fill="${isBW ? '#ffffff' : '#090d16'}" stroke="${border}"/>
         <text x="35" y="208" font-family="monospace" font-size="11" fill="${subAccent}">
-          Latency: &lt;450ms STREAM
+          Throughput: OPTIMAL
         </text>
       </g>
 
-      <!-- Node 3: GitHub CI/CD Deployment Target -->
+      <!-- Node 3 -->
       <g transform="translate(830, 160)">
         <rect width="270" height="250" rx="16" fill="${cardBg}" stroke="${border}" stroke-width="2"/>
         <rect width="270" height="40" rx="16" fill="${isBW ? '#e2e8f0' : '#1e293b'}"/>
-        <text x="20" y="26" font-family="system-ui, sans-serif" font-size="13" font-weight="700" fill="${accent}">
-          03. GITHUB PIPELINE
+        <text x="20" y="26" font-family="system-ui, sans-serif" font-size="12" font-weight="700" fill="${accent}">
+          03. DELIVERY LAYER
         </text>
-        <text x="20" y="70" font-family="system-ui, sans-serif" font-size="15" font-weight="700" fill="${textMain}">
-          Deployment &amp; Ledger
+        <text x="20" y="70" font-family="system-ui, sans-serif" font-size="14" font-weight="700" fill="${textMain}">
+          ${node3Title}
         </text>
         <text x="20" y="95" font-family="monospace" font-size="11" fill="${textMuted}">
-          • Isolated Feature Branches
+          • Client Consumer APIs
         </text>
         <text x="20" y="120" font-family="monospace" font-size="11" fill="${textMuted}">
-          • Automated GitHub Actions
+          • Analytics &amp; Monitoring
         </text>
         <text x="20" y="145" font-family="monospace" font-size="11" fill="${textMuted}">
-          • Zero-Downtime Production
+          • Automated Persistence
         </text>
         <rect x="20" y="180" width="230" height="45" rx="8" fill="${isBW ? '#ffffff' : '#090d16'}" stroke="${border}"/>
         <text x="35" y="208" font-family="monospace" font-size="11" fill="${accent}">
-          CI/CD: GREEN PASSED
+          Output: VERIFIED
         </text>
       </g>
 
       <!-- Bottom Summary Box -->
       <rect x="100" y="470" width="1000" height="150" rx="16" fill="${cardBg}" stroke="${border}" stroke-width="1.5"/>
       <text x="130" y="505" font-family="system-ui, sans-serif" font-size="14" font-weight="700" fill="${textMain}">
-        THE AIAPPSY PRODUCTION WORKFLOW LOOP
+        CONCEPTUAL FLOW &amp; SPECIFICATION SUMMARY
       </text>
       <text x="130" y="535" font-family="system-ui, sans-serif" font-size="12" fill="${textMuted}">
-        1. Agent analyzes specs in Antigravity &gt;&gt; 2. Gemini generates verified AST diffs &gt;&gt; 3. Deterministic local validation &gt;&gt; 4. Automated git push to GitHub &gt;&gt; 5. Deployment complete.
+        ${cleanPrompt}
       </text>
       <text x="130" y="575" font-family="monospace" font-size="11" font-weight="600" fill="${accent}">
-        ENGINEERED FOR VELOCITY &amp; ZERO HALLUCINATIONS — PÅL A. JURITZEN (AIAPPSY)
+        MANUSCRIPT ARCHITECTURAL VISUAL — PUBLICATION READY
       </text>
     </svg>`;
-    return `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(svg)))}`;
+    return sanitizeSvgToDataUri(svg);
   }
 
-  // Children's Storybook Procedural Fallback
-  const charNames = characters.map(c => c.name).join(' & ') || 'Story Scene';
+  // Children's & Fiction Storybook Procedural Fallback
+  const charNames = characters.map(c => c.name).join(' and ') || 'Scene Illustration';
   const bgColor = isBW ? '#ffffff' : '#f8fafc';
   const strokeColor = isBW ? '#111827' : '#4338ca';
   const accentColor = isBW ? '#374151' : '#f59e0b';
-  const fillColor = isBW ? '#f3f4f6' : '#e0e7ff';
   const textColor = isBW ? '#111827' : '#1e1b4b';
 
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 900" width="1200" height="900">
@@ -3482,14 +3535,14 @@ export function generateProceduralSceneSvg(
     <rect x="20" y="20" width="1160" height="860" rx="16" fill="none" stroke="${strokeColor}" stroke-width="${isBW ? '4' : '3'}"/>
     <rect x="150" y="740" width="900" height="100" rx="16" fill="#ffffff" stroke="${strokeColor}" stroke-width="2"/>
     <text x="600" y="775" font-family="'Plus Jakarta Sans', system-ui, sans-serif" font-size="18" font-weight="800" fill="${textColor}" text-anchor="middle">
-      ${charNames.toUpperCase()} — ${isBW ? 'BLACK & WHITE STORYBOOK ILLUSTRATION' : 'FULL COLOR SCENE'}
+      ${charNames.toUpperCase()} — ${isBW ? 'MONOCHROME STORYBOOK ILLUSTRATION' : 'STORY SCENE'}
     </text>
     <text x="600" y="810" font-family="'Georgia', serif" font-size="14" font-style="italic" fill="${isBW ? '#4b5563' : '#6366f1'}" text-anchor="middle">
       "${cleanPrompt}..."
     </text>
   </svg>`;
 
-  return `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(svg)))}`;
+  return sanitizeSvgToDataUri(svg);
 }
 
 export interface ManuscriptVisualPlaceholder {
