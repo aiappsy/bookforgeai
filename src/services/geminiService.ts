@@ -3043,19 +3043,41 @@ export async function extractChapterScenesAndMoments(
   chapterTitle: string,
   chapterContent: string,
   existingCharacters: CharacterProfile[] = [],
-  bookCategory: string = 'children_stories',
+  bookCategory: string = 'guides',
   apiKey?: string
 ): Promise<ExtractedScene[]> {
   if (!chapterContent || chapterContent.trim().length < 30) return [];
   const ai = getAI(apiKey);
 
   const isChildren = bookCategory === 'children_stories';
-  const charContext = existingCharacters.length > 0
+  const isGuides = bookCategory === 'guides' || bookCategory === 'white_paper';
+  const isNonFiction = bookCategory === 'non_fiction';
+  const isFiction = bookCategory === 'fiction';
+
+  const charContext = existingCharacters.length > 0 && (isFiction || isChildren)
     ? `\nKNOWN CHARACTER BIBLE (LOCK VISUALS TO THESE):\n` + existingCharacters.map(c => `- ${c.name} (${c.speciesOrType || 'Character'}): ${c.lockedPromptAnchor}`).join('\n')
     : '';
 
-  const prompt = `You are an elite Children's Book Art Director and Scene Designer.
-Analyze this chapter and identify 2 to 4 key visual moments/scenes that would make captivating, storytelling illustrations.
+  let roleAndGoal = `You are an elite Children's Book Art Director and Scene Designer.
+Analyze this chapter and identify 2 to 4 key visual moments/scenes that would make captivating, storytelling illustrations.`;
+
+  let fallbackStyle = 'Whimsical Storybook Watercolor';
+
+  if (isGuides) {
+    roleAndGoal = `You are an elite Technical Illustrator, Systems Architect, and Modern Information Designer (in the aesthetic style of Linear, Stripe, Apple Developer, and Figma blueprints).
+Analyze this chapter and identify 2 to 4 key technical concepts, architectural diagrams, workflows, or developer/engineering moments that would benefit from clean visual illustrations or blueprints.`;
+    fallbackStyle = 'Modern Tech & SaaS Vector';
+  } else if (isNonFiction) {
+    roleAndGoal = `You are an award-winning Editorial Art Director and Visual Information Designer (Harvard Business Review, The Economist, NYT).
+Analyze this chapter and identify 2 to 4 key conceptual ideas, executive frameworks, or editorial metaphors that would make captivating, thought-provoking illustrations.`;
+    fallbackStyle = 'Editorial Thought Leadership Illustration';
+  } else if (isFiction) {
+    roleAndGoal = `You are an elite Film Concept Artist and Cinematic Storyboard Illustrator.
+Analyze this chapter and identify 2 to 4 pivotal narrative moments with high visual tension, atmospheric world-building, and character emotion.`;
+    fallbackStyle = 'Cinematic Concept Art';
+  }
+
+  const prompt = `${roleAndGoal}
 
 CHAPTER TITLE: "${chapterTitle}"
 CATEGORY: "${bookCategory}"
@@ -3066,11 +3088,10 @@ CHAPTER TEXT:
 ${chapterContent.substring(0, 15000)}
 """
 
-FOR EACH SCENE DETECTED:
-1. Identify the core action, emotional mood, and setting.
-2. Identify which characters from the Character Bible are present in the scene.
-3. Formulate an expert, highly descriptive image generation prompt (suggestedPrompt) capturing the scene's composition, environment, lighting, and exact character actions while incorporating their locked visual traits.
-4. Recommend whether the scene shines in 'color' or 'black_and_white' (e.g. coloring book / ink drawing).
+FOR EACH VISUAL MOMENT / SCENE DETECTED:
+1. Identify the core action, concept, mood, and setting.
+2. Formulate an expert, highly descriptive image generation prompt (suggestedPrompt) capturing the visual's composition, environment, lighting, and focal elements.
+3. Recommend whether the scene shines in 'color' or 'black_and_white'.
 
 Return a JSON array matching the schema.`;
 
@@ -3106,14 +3127,14 @@ Return a JSON array matching the schema.`;
     if (Array.isArray(list)) {
       return list.map((s: any) => ({
         id: 'scene_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7),
-        title: s.title || 'Scene Moment',
+        title: s.title || 'Visual Moment',
         excerpt: s.excerpt || '',
         sceneSummary: s.sceneSummary || '',
         characterNames: Array.isArray(s.characterNames) ? s.characterNames : [],
         suggestedPrompt: s.suggestedPrompt || s.sceneSummary,
         colorModeRecommendation: s.colorModeRecommendation === 'black_and_white' ? 'black_and_white' : 'color',
-        suggestedArtStyle: s.suggestedArtStyle || (isChildren ? 'Whimsical Storybook Watercolor' : 'Digital Illustration'),
-        mood: s.mood || 'Wonder',
+        suggestedArtStyle: s.suggestedArtStyle || fallbackStyle,
+        mood: s.mood || 'Focus',
         composition: s.composition || 'Medium shot'
       }));
     }
@@ -3131,6 +3152,7 @@ export async function generateSceneIllustrationWithNanoBanana(params: {
   artStyle: string;
   aspectRatio?: '1:1' | '16:9' | '4:3' | '3:4';
   charactersInScene?: CharacterProfile[];
+  bookCategory?: string;
   apiKey?: string;
 }): Promise<string> {
   const {
@@ -3140,14 +3162,20 @@ export async function generateSceneIllustrationWithNanoBanana(params: {
     artStyle,
     aspectRatio = '4:3',
     charactersInScene = [],
+    bookCategory = 'guides',
     apiKey
   } = params;
 
   const ai = getAI(apiKey);
 
+  const isChildren = bookCategory === 'children_stories';
+  const isGuides = bookCategory === 'guides' || bookCategory === 'white_paper';
+  const isNonFiction = bookCategory === 'non_fiction';
+  const isFiction = bookCategory === 'fiction';
+
   // 1. Synthesize Nano Banana Art Director prompt enforcing character consistency and color palette
   let characterConsistencyInstruction = '';
-  if (charactersInScene && charactersInScene.length > 0) {
+  if ((isFiction || isChildren) && charactersInScene && charactersInScene.length > 0) {
     characterConsistencyInstruction = `\nCRITICAL CHARACTER VISUAL CONSISTENCY ANCHORS (MANDATORY EXACT MATCHING):\n` +
       charactersInScene.map(c => `[CHARACTER "${c.name.toUpperCase()}"]: ${c.lockedPromptAnchor || c.physicalAppearance + ', wearing ' + c.clothingAndAttire}. Maintain exact face structure, hair, colors, proportions, and attire without deviation.`).join('\n') +
       `\nSTRICT CHARACTER RULE: The above characters MUST be rendered with 100% cohesive, identical physical features and outfits matching their established design across the entire book.\n`;
@@ -3155,19 +3183,54 @@ export async function generateSceneIllustrationWithNanoBanana(params: {
 
   let colorModeDirective = '';
   if (colorMode === 'black_and_white') {
-    colorModeDirective = `\nCOLOR MODE: STRICT BLACK AND WHITE LINE ART / INK. Clean, high-contrast crisp black line art on a clean white background. Perfect for children's coloring book or classic storybook ink illustration. NO COLOR, NO GRADIENT RAINBOWS, pure black outlines and elegant ink shading/cross-hatching.\n`;
+    if (isGuides) {
+      colorModeDirective = `\nCOLOR MODE: CLEAN MONOCHROME BLUEPRINT & INK. Crisp, high-contrast black line art and technical architectural blueprints on a clean white background. Precision geometry, sharp technical lines, pure monochrome.\n`;
+    } else {
+      colorModeDirective = `\nCOLOR MODE: STRICT BLACK AND WHITE LINE ART / INK. Clean, high-contrast crisp black line art on a clean white background. Pure black outlines and elegant ink cross-hatching.\n`;
+    }
   } else {
-    colorModeDirective = `\nCOLOR MODE: VIBRANT FULL COLOR. Rich, cohesive, harmonious color palette with cinematic lighting, warm ambient highlights, and captivating visual storytelling depth.\n`;
+    if (isGuides) {
+      colorModeDirective = `\nCOLOR MODE: VIBRANT MODERN TECH PALETTE. Clean modern SaaS palette (indigo, cyan, violet, slate), subtle atmospheric glow, crisp vector clarity, and balanced lighting.\n`;
+    } else {
+      colorModeDirective = `\nCOLOR MODE: VIBRANT FULL COLOR. Rich, cohesive, harmonious color palette with cinematic lighting, warm ambient highlights, and captivating visual storytelling depth.\n`;
+    }
   }
 
-  // Engineer the final Master Prompt
-  const masterArtDirectorPrompt = `You are "Nano Banana", an award-winning Children's Book Art Director and Master Illustrator (in the style of Beatrix Potter, Oliver Jeffers, Maurice Sendak, and Pixar).
+  // Engineer the category-tuned Master Prompt
+  let masterArtDirectorPrompt = '';
+  if (isGuides) {
+    masterArtDirectorPrompt = `You are "Nano Banana", an elite Technical Illustrator, Systems Architect, and Modern SaaS Visual Designer (in the style of Linear, Stripe, Apple Developer, and Figma architectural blueprints).
+Create a single, cohesive, publication-quality technical illustration or architectural graphic for: "${scenePrompt}" (Chapter: "${chapterTitle}").
+Art Style: "${artStyle}".
+${colorModeDirective}
+${characterConsistencyInstruction}
+Composition: Ultra-clean layout, modern developer aesthetics, clear visual hierarchy, precision vector lines, balanced whitespace, professional technical finish.
+Output ONLY the final detailed AI generation prompt string. No code fences, no conversational text.`;
+  } else if (isNonFiction) {
+    masterArtDirectorPrompt = `You are "Nano Banana", an award-winning Editorial Illustrator and Visual Information Designer (Harvard Business Review, The Economist, NYT).
+Create a single, sophisticated, publication-quality editorial illustration for: "${scenePrompt}" (Chapter: "${chapterTitle}").
+Art Style: "${artStyle}".
+${colorModeDirective}
+${characterConsistencyInstruction}
+Composition: Thoughtful visual metaphor, sophisticated balance, elegant palette, professional editorial weight.
+Output ONLY the final detailed AI generation prompt string. No code fences, no conversational text.`;
+  } else if (isFiction) {
+    masterArtDirectorPrompt = `You are "Nano Banana", a master Cinematic Concept Artist and Film Matte Painter.
+Create a breathtaking, publication-quality scene illustration for: "${scenePrompt}" (Chapter: "${chapterTitle}").
+Art Style: "${artStyle}".
+${colorModeDirective}
+${characterConsistencyInstruction}
+Composition: Cinematic lighting, atmospheric depth, emotive character staging, high visual tension, immersive world-building.
+Output ONLY the final detailed AI generation prompt string. No code fences, no conversational text.`;
+  } else {
+    masterArtDirectorPrompt = `You are "Nano Banana", an award-winning Children's Book Art Director and Master Illustrator (in the style of Beatrix Potter, Oliver Jeffers, Maurice Sendak, and Pixar).
 Create a single, cohesive, publication-quality chapter illustration for: "${scenePrompt}" (Chapter: "${chapterTitle}").
 Art Style: "${artStyle}".
 ${colorModeDirective}
 ${characterConsistencyInstruction}
 Composition: Masterful visual storytelling, balanced focal point, rich environmental details, charming expressive character poses, clear readable silhouette.
 Output ONLY the final detailed AI generation prompt string. No code fences, no conversational text.`;
+  }
 
   let engineeredPrompt = scenePrompt;
   try {

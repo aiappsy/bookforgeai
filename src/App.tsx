@@ -2549,11 +2549,23 @@ export default function App() {
     setTimeout(() => setHistoryNotice(null), 3500);
   };
 
-  const handleInsertIllustrationIntoChapter = (chapterId: string, markdownSnippet: string) => {
+  const handleInsertIllustrationIntoChapter = (chapterId: string, markdownSnippet: string, position: 'top' | 'bottom' = 'bottom') => {
     pushHistorySnapshot("Inserted Scene Illustration into Chapter");
     setChapters(prev => prev.map(c => {
       if (c.id !== chapterId) return c;
-      const updatedContent = c.content ? `${c.content}\n\n${markdownSnippet}\n` : markdownSnippet;
+      let updatedContent = '';
+      if (!c.content) {
+        updatedContent = markdownSnippet;
+      } else if (position === 'top') {
+        const match = c.content.match(/^(#[^\n]+\n+)/);
+        if (match) {
+          updatedContent = c.content.replace(match[0], `${match[0]}${markdownSnippet}\n\n`);
+        } else {
+          updatedContent = `${markdownSnippet}\n\n${c.content}`;
+        }
+      } else {
+        updatedContent = `${c.content}\n\n${markdownSnippet}\n`;
+      }
       return { ...c, content: updatedContent };
     }));
     setHistoryNotice("Scene illustration inserted into chapter manuscript!");

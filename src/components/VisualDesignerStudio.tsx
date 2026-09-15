@@ -54,22 +54,59 @@ interface VisualDesignerStudioProps {
   onNavigateToChapter?: (chapterId: string) => void;
 }
 
-export const ART_STYLES = [
-  { id: 'whimsical_watercolor', name: "Whimsical Storybook (Watercolor & Ink)", desc: "Soft gentle washes, delicate ink outlines, classic Beatrix Potter and Oliver Jeffers aesthetic." },
-  { id: 'pixar_3d_animation', name: "Modern 3D Digital Animation (Pixar/Disney)", desc: "Vibrant expressive characters, volumetric lighting, rich 3D textures, and cinematic depth." },
-  { id: 'coloring_book_bold', name: "Children's Coloring Book (Clean Bold Line Art)", desc: "Crisp black line art with thick outlines and open white spaces, ideal for print coloring activities." },
-  { id: 'classic_pen_ink', name: "Classic Pen & Ink Storybook (Black & White)", desc: "Intricate cross-hatching, fine line weight, vintage fairy tale engravings and Victorian woodcuts." },
-  { id: 'pastel_crayon', name: "Soft Pastel & Wax Crayon Bedtime", desc: "Warm comforting crayon textures, gentle dreamlike hues, tactile bedtime story charm." },
-  { id: 'gouache_colored_pencil', name: "Lush Gouache & Colored Pencil", desc: "Rich opaque matte tones, textured pencil strokes, vibrant folk-art storybook illustration." },
-  { id: 'papercut_claymation', name: "Papercut & Clay Craft 3D", desc: "Layered craft paper silhouettes, tactile claymation depth, charming handmade feel." },
-  { id: 'ghibli_anime', name: "Studio Ghibli Inspired Pastoral Anime", desc: "Lush hand-painted cloudscapes, whimsical creatures, peaceful nature tones." }
-];
+export const CATEGORY_ART_STYLES: Record<string, { id: string; name: string; desc: string }[]> = {
+  guides: [
+    { id: 'tech_saas_vector', name: "Modern Tech & SaaS Vector", desc: "Crisp UI components, modern indigo/cyan gradients, sleek vector lines (Linear/Stripe aesthetic)." },
+    { id: 'system_blueprint', name: "Clean Architecture Blueprint & System Diagram", desc: "Precision geometric lines, labeled components, technical schematic layout." },
+    { id: 'isometric_3d_tech', name: "Isometric 3D Technology & Cloud Infrastructure", desc: "Volumetric servers, cloud infrastructure blocks, modular SaaS architecture." },
+    { id: 'minimalist_diagram', name: "Minimalist Line-Art & Workflow Flowchart", desc: "High-contrast clean outlines, node-and-connector visual clarity, elegant monochrome." },
+    { id: 'developer_workspace', name: "Modern Developer Studio & Workspace", desc: "Clean studio workspace, multiple glowing code monitors, focused engineering aesthetic." },
+    { id: 'editorial_infographic', name: "Technical Infographic & Data Visualization", desc: "Structured data blocks, comparison matrices, clean modern typography accents." }
+  ],
+  white_paper: [
+    { id: 'corporate_infographic', name: "Institutional Research & Enterprise Infographic", desc: "Gartner/McKinsey-grade structured diagrams, executive data presentation." },
+    { id: 'system_blueprint', name: "Enterprise Architecture Blueprint", desc: "Precision geometric lines, labeled components, technical schematic layout." },
+    { id: 'tech_saas_vector', name: "Modern Tech & SaaS Vector", desc: "Crisp UI elements, modern indigo/cyan gradients, sleek vector lines." },
+    { id: 'minimalist_diagram', name: "Minimalist Executive Flowchart", desc: "High-contrast clean outlines, elegant monochrome." }
+  ],
+  non_fiction: [
+    { id: 'editorial_thought_leadership', name: "Editorial Thought Leadership (NYT / Economist)", desc: "Conceptual visual metaphors, sophisticated editorial color palette, smart conceptual depth." },
+    { id: 'business_vector', name: "Modern Business & Strategy Vector", desc: "Clean geometric figures, growth arrows, organizational frameworks." },
+    { id: 'studio_portrait', name: "Modern Studio Photography & Workspace", desc: "Cinematic depth of field, warm ambient lighting, realistic workshop or office setting." },
+    { id: 'minimalist_zen', name: "Minimalist Geometric & Zen Line Art", desc: "Subtle organic forms, mindfulness and habit growth metaphors." }
+  ],
+  fiction: [
+    { id: 'cinematic_concept_art', name: "Cinematic Concept Art & Matte Painting", desc: "Dramatic lighting, epic depth, atmospheric realism, motion-picture scale." },
+    { id: 'graphic_novel_noir', name: "Graphic Novel Noir & Heavy Ink", desc: "High-contrast shadows, bold inks, expressive line work, graphic storytelling." },
+    { id: 'epic_fantasy_digital', name: "Lush Fantasy & Sci-Fi Digital Art", desc: "Vibrant magical lighting, intricate world-building, rich environmental textures." },
+    { id: 'classic_pen_ink', name: "Classic Pen & Ink Etching (Victorian)", desc: "Fine cross-hatching, vintage storybook engraving, timeless literary style." }
+  ],
+  children_stories: [
+    { id: 'whimsical_watercolor', name: "Whimsical Storybook (Watercolor & Ink)", desc: "Soft gentle washes, delicate ink outlines, classic Beatrix Potter and Oliver Jeffers aesthetic." },
+    { id: 'pixar_3d_animation', name: "Modern 3D Digital Animation (Pixar/Disney)", desc: "Vibrant expressive characters, volumetric lighting, rich 3D textures, and cinematic depth." },
+    { id: 'coloring_book_bold', name: "Children's Coloring Book (Clean Bold Line Art)", desc: "Crisp black line art with thick outlines and open white spaces, ideal for print coloring activities." },
+    { id: 'classic_pen_ink', name: "Classic Pen & Ink Storybook (Black & White)", desc: "Intricate cross-hatching, fine line weight, vintage fairy tale engravings and Victorian woodcuts." },
+    { id: 'pastel_crayon', name: "Soft Pastel & Wax Crayon Bedtime", desc: "Warm comforting crayon textures, gentle dreamlike hues, tactile bedtime story charm." },
+    { id: 'gouache_colored_pencil', name: "Lush Gouache & Colored Pencil", desc: "Rich opaque matte tones, textured pencil strokes, vibrant folk-art storybook illustration." },
+    { id: 'papercut_claymation', name: "Papercut & Clay Craft 3D", desc: "Layered craft paper silhouettes, tactile claymation depth, charming handmade feel." },
+    { id: 'ghibli_anime', name: "Studio Ghibli Inspired Pastoral Anime", desc: "Lush hand-painted cloudscapes, whimsical creatures, peaceful nature tones." }
+  ]
+};
+
+export function getArtStylesForCategory(category?: string) {
+  if (!category) return CATEGORY_ART_STYLES.guides;
+  if (category === 'guides' || category === 'sales_copy' || category === 'web_copy') return CATEGORY_ART_STYLES.guides;
+  if (category === 'white_paper') return CATEGORY_ART_STYLES.white_paper;
+  if (category === 'non_fiction') return CATEGORY_ART_STYLES.non_fiction;
+  if (category === 'fiction') return CATEGORY_ART_STYLES.fiction;
+  return CATEGORY_ART_STYLES.children_stories;
+}
 
 export const VisualDesignerStudio: React.FC<VisualDesignerStudioProps> = ({
   chapters,
   activeChapterId,
   bookTitle = 'Untitled Manuscript',
-  bookCategory = 'children_stories',
+  bookCategory = 'guides',
   customApiKey,
   characterBible,
   chapterIllustrations,
@@ -78,6 +115,14 @@ export const VisualDesignerStudio: React.FC<VisualDesignerStudioProps> = ({
   onInsertIllustrationIntoChapter,
   onNavigateToChapter
 }) => {
+  const isChildren = bookCategory === 'children_stories';
+  const isGuides = bookCategory === 'guides' || bookCategory === 'white_paper' || bookCategory === 'sales_copy' || bookCategory === 'web_copy';
+  const isNonFiction = bookCategory === 'non_fiction';
+  const isFiction = bookCategory === 'fiction';
+  const hasCharacters = isFiction || isChildren;
+
+  const currentCategoryStyles = getArtStylesForCategory(bookCategory);
+
   const [activeTab, setActiveTab] = useState<'illustrator' | 'character_bible' | 'gallery'>('illustrator');
   const [selectedChapterId, setSelectedChapterId] = useState<string>(activeChapterId || chapters[0]?.id || '');
   
@@ -89,7 +134,7 @@ export const VisualDesignerStudio: React.FC<VisualDesignerStudioProps> = ({
   // Generation Controls
   const [scenePrompt, setScenePrompt] = useState('');
   const [colorMode, setColorMode] = useState<'color' | 'black_and_white'>('color');
-  const [selectedArtStyle, setSelectedArtStyle] = useState(ART_STYLES[0].name);
+  const [selectedArtStyle, setSelectedArtStyle] = useState(currentCategoryStyles[0].name);
   const [aspectRatio, setAspectRatio] = useState<'4:3' | '1:1' | '16:9' | '3:4'>('4:3');
   const [selectedCharIds, setSelectedCharIds] = useState<string[]>([]);
   const [isGeneratingIllustration, setIsGeneratingIllustration] = useState(false);
@@ -241,11 +286,11 @@ export const VisualDesignerStudio: React.FC<VisualDesignerStudioProps> = ({
     setScenePrompt(scene.suggestedPrompt || scene.sceneSummary);
     setColorMode(scene.colorModeRecommendation || 'color');
     if (scene.suggestedArtStyle) {
-      const match = ART_STYLES.find(s => s.name.toLowerCase().includes(scene.suggestedArtStyle?.toLowerCase() || ''));
+      const match = currentCategoryStyles.find(s => s.name.toLowerCase().includes(scene.suggestedArtStyle?.toLowerCase() || ''));
       if (match) setSelectedArtStyle(match.name);
     }
     // Match characters by name in bible
-    if (scene.characterNames && scene.characterNames.length > 0) {
+    if (hasCharacters && scene.characterNames && scene.characterNames.length > 0) {
       const matchedIds = characterBible
         .filter(c => scene.characterNames.some(n => c.name.toLowerCase().includes(n.toLowerCase()) || n.toLowerCase().includes(c.name.toLowerCase())))
         .map(c => c.id);
@@ -262,15 +307,15 @@ export const VisualDesignerStudio: React.FC<VisualDesignerStudioProps> = ({
     }
 
     setIsGeneratingIllustration(true);
-    setGenerationStep("Nano Banana analyzing scene composition & character anchors...");
+    setGenerationStep("Nano Banana analyzing visual composition...");
 
     try {
-      const activeCharacters = characterBible.filter(c => selectedCharIds.includes(c.id));
+      const activeCharacters = hasCharacters ? characterBible.filter(c => selectedCharIds.includes(c.id)) : [];
       
       setGenerationStep(
         colorMode === 'black_and_white' 
-          ? "Rendering high-contrast Black & White ink line art..." 
-          : "Synthesizing full-color storybook illustration..."
+          ? (isGuides ? "Rendering precision monochrome blueprint & diagram..." : "Rendering high-contrast Black & White ink line art...") 
+          : (isGuides ? "Synthesizing modern tech vector illustration..." : "Synthesizing full-color illustration...")
       );
 
       const imageUrl = await generateSceneIllustrationWithNanoBanana({
@@ -280,6 +325,7 @@ export const VisualDesignerStudio: React.FC<VisualDesignerStudioProps> = ({
         artStyle: selectedArtStyle,
         aspectRatio,
         charactersInScene: activeCharacters,
+        bookCategory,
         apiKey: customApiKey
       });
 
@@ -287,7 +333,7 @@ export const VisualDesignerStudio: React.FC<VisualDesignerStudioProps> = ({
         const newIllustration: ChapterIllustration = {
           id: 'illus_' + Date.now(),
           chapterId: selectedChapterId,
-          sceneTitle: selectedScene?.title || `Scene for ${currentChapter?.title || 'Chapter'}`,
+          sceneTitle: selectedScene?.title || `Visual for ${currentChapter?.title || 'Chapter'}`,
           prompt: basePrompt,
           imageUrl,
           colorMode,
@@ -300,10 +346,10 @@ export const VisualDesignerStudio: React.FC<VisualDesignerStudioProps> = ({
 
         setLatestGeneratedImage(imageUrl);
         onUpdateIllustrations([newIllustration, ...chapterIllustrations]);
-        showToast("Illustration generated successfully!");
+        showToast("Visual generated successfully!");
         setFeedbackInput('');
       } else {
-        showToast("Failed to generate illustration. Please try another prompt.");
+        showToast("Failed to generate visual. Please try another prompt.");
       }
     } catch (e) {
       console.error(e);
@@ -314,13 +360,19 @@ export const VisualDesignerStudio: React.FC<VisualDesignerStudioProps> = ({
     }
   };
 
-  const handleInsertIntoMarkdown = (illus: ChapterIllustration) => {
-    const markdownTag = `\n\n![Illustration: ${illus.sceneTitle}](${illus.imageUrl})\n*Illustration: ${illus.sceneTitle} (${illus.colorMode === 'black_and_white' ? 'Line Art' : 'Full Color'})*\n\n`;
-    onInsertIllustrationIntoChapter(illus.chapterId, markdownTag);
+  const handleInsertIntoMarkdown = (illus: ChapterIllustration, position: 'top' | 'bottom' = 'top') => {
+    const markdownTag = `\n\n![Illustration: ${illus.sceneTitle}](${illus.imageUrl})\n*${illus.sceneTitle} (${illus.colorMode === 'black_and_white' ? 'Monochrome' : 'Full Color'})*\n\n`;
+    onInsertIllustrationIntoChapter(illus.chapterId, markdownTag, position);
     
     const updated = chapterIllustrations.map(item => item.id === illus.id ? { ...item, insertedInMarkdown: true } : item);
     onUpdateIllustrations(updated);
-    showToast(`Inserted illustration directly into chapter text!`);
+    showToast(position === 'top' ? "Inserted as chapter header banner!" : "Inserted into chapter content!");
+  };
+
+  const handleCopyMarkdown = (illus: ChapterIllustration) => {
+    const markdownTag = `![Illustration: ${illus.sceneTitle}](${illus.imageUrl})`;
+    navigator.clipboard.writeText(markdownTag);
+    showToast("Copied Markdown tag to clipboard!");
   };
 
   const handleDownloadImage = (illus: ChapterIllustration) => {
@@ -330,7 +382,7 @@ export const VisualDesignerStudio: React.FC<VisualDesignerStudioProps> = ({
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-    showToast("Downloaded high-resolution illustration!");
+    showToast("Downloaded high-resolution image!");
   };
 
   const handleDeleteIllustration = (id: string) => {
@@ -362,13 +414,20 @@ export const VisualDesignerStudio: React.FC<VisualDesignerStudioProps> = ({
           
           <div className="space-y-2 relative z-10 max-w-2xl">
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/15 backdrop-blur-md border border-white/20 text-yellow-200 text-xs font-bold uppercase tracking-wider">
-              <Sparkles className="w-3.5 h-3.5 text-yellow-300" /> Nano Banana Visual Designer & Art Studio
+              <Sparkles className="w-3.5 h-3.5 text-yellow-300" /> 
+              {isGuides ? "Nano Banana Technical & Architectural Visuals" : isNonFiction ? "Nano Banana Editorial Designer" : isFiction ? "Nano Banana Concept Art Studio" : "Nano Banana Visual Designer & Art Studio"}
             </div>
             <h1 className="text-2xl md:text-4xl font-extrabold tracking-tight">
-              Children's Book & Chapter Illustration Engine
+              {isGuides ? "Technical Diagram & Visual Studio" : isNonFiction ? "Editorial & Conceptual Visual Studio" : isFiction ? "Cinematic Story & Scene Illustrator" : "Children's Book & Storybook Illustration Engine"}
             </h1>
             <p className="text-amber-100 text-sm leading-relaxed">
-              Analyze chapter stories, extract pivotal scene moments, generate seamless color or black & white line-art illustrations, and guarantee 100% character cohesion across every page.
+              {isGuides 
+                ? "Generate clean architecture blueprints, modern SaaS graphics, workflow diagrams, and technical chapter banners." 
+                : isNonFiction 
+                ? "Craft sophisticated thought leadership visuals, business framework diagrams, and high-impact chapter headers."
+                : isFiction 
+                ? "Bring your scenes to life with cinematic concept art, graphic novel frames, and character-locked illustrations." 
+                : "Analyze chapter stories, extract pivotal scene moments, generate seamless color or black & white line-art illustrations, and guarantee 100% character cohesion across every page."}
             </p>
           </div>
 
@@ -376,8 +435,8 @@ export const VisualDesignerStudio: React.FC<VisualDesignerStudioProps> = ({
             <div className="bg-black/30 backdrop-blur-md p-3.5 rounded-2xl border border-white/10 text-center sm:text-left">
               <div className="text-[10px] text-amber-200 uppercase font-bold">Total Artwork Assets</div>
               <div className="text-xl font-extrabold text-white flex items-center justify-center sm:justify-start gap-2">
-                <span>{chapterIllustrations.length} Scenes</span>
-                <span className="text-xs font-normal text-amber-300">({characterBible.length} Cast Members)</span>
+                <span>{chapterIllustrations.length} Visuals</span>
+                {hasCharacters && <span className="text-xs font-normal text-amber-300">({characterBible.length} Cast Members)</span>}
               </div>
             </div>
           </div>
@@ -394,20 +453,22 @@ export const VisualDesignerStudio: React.FC<VisualDesignerStudioProps> = ({
             }`}
           >
             <Palette className="w-4 h-4" />
-            <span>Chapter Scene Illustrator</span>
+            <span>{isGuides ? "Chapter Diagram & Visual Designer" : isNonFiction ? "Editorial & Concept Designer" : "Chapter Scene Illustrator"}</span>
           </button>
 
-          <button
-            onClick={() => setActiveTab('character_bible')}
-            className={`flex items-center gap-2 px-5 py-3 rounded-2xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
-              activeTab === 'character_bible'
-                ? 'bg-indigo-600 text-white shadow-md'
-                : 'bg-white text-zinc-600 hover:bg-zinc-100 border border-zinc-200'
-            }`}
-          >
-            <Users className="w-4 h-4" />
-            <span>Character Bible & Cast Cohesion ({characterBible.length})</span>
-          </button>
+          {hasCharacters && (
+            <button
+              onClick={() => setActiveTab('character_bible')}
+              className={`flex items-center gap-2 px-5 py-3 rounded-2xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
+                activeTab === 'character_bible'
+                  ? 'bg-indigo-600 text-white shadow-md'
+                  : 'bg-white text-zinc-600 hover:bg-zinc-100 border border-zinc-200'
+              }`}
+            >
+              <Users className="w-4 h-4" />
+              <span>Character Bible & Cast Cohesion ({characterBible.length})</span>
+            </button>
+          )}
 
           <button
             onClick={() => setActiveTab('gallery')}
@@ -451,7 +512,7 @@ export const VisualDesignerStudio: React.FC<VisualDesignerStudioProps> = ({
                   >
                     {chapters.map((ch, idx) => (
                       <option key={ch.id} value={ch.id}>
-                        Chapter {idx + 1}: {ch.title} ({chapterIllustrationsCount(ch.id)} images)
+                        Chapter {idx + 1}: {ch.title} ({chapterIllustrationsCount(ch.id)} visuals)
                       </option>
                     ))}
                   </select>
@@ -466,27 +527,78 @@ export const VisualDesignerStudio: React.FC<VisualDesignerStudioProps> = ({
                   {isExtractingScenes ? (
                     <>
                       <RefreshCw className="w-4 h-4 animate-spin" />
-                      <span>Nano Banana analyzing chapter text...</span>
+                      <span>{isGuides ? "Nano Banana analyzing architecture & concepts..." : "Nano Banana analyzing chapter text..."}</span>
                     </>
                   ) : (
                     <>
                       <Sparkles className="w-4 h-4 text-yellow-200" />
-                      <span>Auto-Analyze & Extract Scene Moments</span>
+                      <span>{isGuides ? "Auto-Analyze & Extract Visual Concepts" : "Auto-Analyze & Extract Scene Moments"}</span>
                     </>
                   )}
                 </button>
 
                 <p className="text-[11px] text-zinc-500 leading-snug">
-                  Nano Banana reads your chapter prose, finds the most visual climax/dialogue moments, detects which characters are present, and formulates ready-to-draw scene prompts.
+                  {isGuides 
+                    ? "Nano Banana reads your chapter text, detects key architecture workflows, cloud components, or procedures, and generates ready-to-render visual prompts." 
+                    : "Nano Banana reads your chapter prose, finds the most visual moments, and formulates ready-to-draw scene prompts."}
                 </p>
               </div>
+
+              {/* Quick Presets for Technical Guides & Non-Fiction */}
+              {!hasCharacters && (
+                <div className="bg-indigo-50/60 border border-indigo-100 rounded-3xl p-5 shadow-2xs space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-xs font-bold text-indigo-950 flex items-center gap-1.5">
+                      <Sparkles className="w-4 h-4 text-indigo-600" /> Quick Visual Presets for {currentChapter?.title || 'Chapter'}
+                    </h4>
+                  </div>
+                  <div className="grid grid-cols-1 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setScenePrompt(`High-impact chapter hero header banner illustrating the core theme of: "${currentChapter?.title || 'this chapter'}". Modern technical SaaS visual, sleek linear gradient aesthetic, studio lighting, widescreen composition.`);
+                        setAspectRatio('16:9');
+                        setColorMode('color');
+                      }}
+                      className="text-left p-3 bg-white hover:bg-indigo-50/80 border border-indigo-200/70 rounded-xl text-xs font-semibold text-zinc-800 transition-all flex items-center justify-between cursor-pointer"
+                    >
+                      <span>🚀 Chapter Header Banner (16:9)</span>
+                      <ArrowRight className="w-3.5 h-3.5 text-indigo-500" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setScenePrompt(`Detailed architectural blueprint and node-and-connector workflow diagram illustrating the system processes described in: "${currentChapter?.title || 'this chapter'}". Precision technical lines, clean geometric layout, modular cloud blocks.`);
+                        setAspectRatio('4:3');
+                      }}
+                      className="text-left p-3 bg-white hover:bg-indigo-50/80 border border-indigo-200/70 rounded-xl text-xs font-semibold text-zinc-800 transition-all flex items-center justify-between cursor-pointer"
+                    >
+                      <span>🏗️ System Architecture & Workflow Diagram</span>
+                      <ArrowRight className="w-3.5 h-3.5 text-indigo-500" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setScenePrompt(`Modern developer studio workspace with glowing code monitors, architectural notes on a glass board, focused engineering aesthetic, illustrating: "${currentChapter?.title || 'this chapter'}".`);
+                        setAspectRatio('4:3');
+                        setColorMode('color');
+                      }}
+                      className="text-left p-3 bg-white hover:bg-indigo-50/80 border border-indigo-200/70 rounded-xl text-xs font-semibold text-zinc-800 transition-all flex items-center justify-between cursor-pointer"
+                    >
+                      <span>💻 Modern Developer & Engineering Studio</span>
+                      <ArrowRight className="w-3.5 h-3.5 text-indigo-500" />
+                    </button>
+                  </div>
+                </div>
+              )}
 
               {/* Detected Scenes List */}
               {extractedScenes.length > 0 && (
                 <div className="bg-white rounded-3xl border border-zinc-200 p-5 shadow-sm space-y-3">
                   <div className="flex items-center justify-between border-b border-zinc-100 pb-2">
                     <h3 className="text-xs font-bold text-zinc-800 uppercase tracking-wider flex items-center gap-1.5">
-                      <Compass className="w-4 h-4 text-indigo-600" /> Detected Scene Moments ({extractedScenes.length})
+                      <Compass className="w-4 h-4 text-indigo-600" /> 
+                      {isGuides ? `Detected Visual Concepts (${extractedScenes.length})` : `Detected Scene Moments (${extractedScenes.length})`}
                     </h3>
                   </div>
 
@@ -508,7 +620,7 @@ export const VisualDesignerStudio: React.FC<VisualDesignerStudioProps> = ({
                               ? 'bg-zinc-900 text-white'
                               : 'bg-emerald-100 text-emerald-800'
                           }`}>
-                            {scene.colorModeRecommendation === 'black_and_white' ? 'B&W Line Art' : 'Full Color'}
+                            {scene.colorModeRecommendation === 'black_and_white' ? (isGuides ? 'Monochrome' : 'B&W Line Art') : 'Full Color'}
                           </span>
                         </div>
                         
@@ -517,8 +629,8 @@ export const VisualDesignerStudio: React.FC<VisualDesignerStudioProps> = ({
                         </p>
 
                         <div className="flex items-center justify-between text-[10px] text-zinc-500 font-medium">
-                          <span>Mood: <strong className="text-zinc-700">{scene.mood}</strong></span>
-                          <span>Shot: <strong className="text-zinc-700">{scene.composition}</strong></span>
+                          <span>Focus: <strong className="text-zinc-700">{scene.mood}</strong></span>
+                          <span>Layout: <strong className="text-zinc-700">{scene.composition}</strong></span>
                         </div>
                       </div>
                     ))}
@@ -526,67 +638,69 @@ export const VisualDesignerStudio: React.FC<VisualDesignerStudioProps> = ({
                 </div>
               )}
 
-              {/* Character Bible Quick Status Box */}
-              <div className="bg-indigo-50/60 border border-indigo-100 rounded-3xl p-5 shadow-2xs space-y-3">
-                <div className="flex items-center justify-between">
-                  <h4 className="text-xs font-bold text-indigo-950 flex items-center gap-1.5">
-                    <Users className="w-4 h-4 text-indigo-600" /> Character Consistency Anchor
-                  </h4>
-                  <button
-                    onClick={() => setActiveTab('character_bible')}
-                    className="text-[11px] font-bold text-indigo-600 hover:text-indigo-800 underline cursor-pointer"
-                  >
-                    Manage Cast ({characterBible.length})
-                  </button>
-                </div>
-
-                {characterBible.length > 0 ? (
-                  <div className="space-y-2">
-                    <p className="text-[11px] text-indigo-900 leading-snug">
-                      Select which characters appear in this scene to lock their visual identity, facial features, and attire:
-                    </p>
-                    <div className="flex flex-wrap gap-1.5 pt-1">
-                      {characterBible.map(char => {
-                        const isSelected = selectedCharIds.includes(char.id);
-                        return (
-                          <button
-                            key={char.id}
-                            type="button"
-                            onClick={() => {
-                              setSelectedCharIds(prev => 
-                                isSelected ? prev.filter(id => id !== char.id) : [...prev, char.id]
-                              );
-                            }}
-                            className={`px-3 py-1.5 rounded-xl text-[11px] font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
-                              isSelected
-                                ? 'bg-indigo-600 text-white shadow-xs'
-                                : 'bg-white text-zinc-700 border border-indigo-200 hover:bg-indigo-50'
-                            }`}
-                          >
-                            <Lock className="w-3 h-3 text-amber-300" />
-                            <span>{char.name}</span>
-                            {isSelected && <Check className="w-3 h-3 text-white" />}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                ) : (
-                  <div className="bg-white/80 p-3 rounded-2xl border border-indigo-100 text-center space-y-2">
-                    <p className="text-[11px] text-zinc-600">
-                      No character profiles created yet. Auto-extract them from your manuscript to ensure identical facial designs across every chapter!
-                    </p>
+              {/* Character Bible Quick Status Box (Only for Character-driven books) */}
+              {hasCharacters && (
+                <div className="bg-indigo-50/60 border border-indigo-100 rounded-3xl p-5 shadow-2xs space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-xs font-bold text-indigo-950 flex items-center gap-1.5">
+                      <Users className="w-4 h-4 text-indigo-600" /> Character Consistency Anchor
+                    </h4>
                     <button
-                      onClick={handleAutoExtractCharacters}
-                      disabled={isExtractingChars}
-                      className="text-xs font-bold text-indigo-700 hover:text-indigo-900 bg-indigo-100/70 px-3 py-1.5 rounded-xl transition-colors inline-flex items-center gap-1.5 cursor-pointer"
+                      onClick={() => setActiveTab('character_bible')}
+                      className="text-[11px] font-bold text-indigo-600 hover:text-indigo-800 underline cursor-pointer"
                     >
-                      <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
-                      {isExtractingChars ? 'Extracting...' : 'Auto-Build Character Cast'}
+                      Manage Cast ({characterBible.length})
                     </button>
                   </div>
-                )}
-              </div>
+
+                  {characterBible.length > 0 ? (
+                    <div className="space-y-2">
+                      <p className="text-[11px] text-indigo-900 leading-snug">
+                        Select which characters appear in this scene to lock their visual identity, facial features, and attire:
+                      </p>
+                      <div className="flex flex-wrap gap-1.5 pt-1">
+                        {characterBible.map(char => {
+                          const isSelected = selectedCharIds.includes(char.id);
+                          return (
+                            <button
+                              key={char.id}
+                              type="button"
+                              onClick={() => {
+                                setSelectedCharIds(prev => 
+                                  isSelected ? prev.filter(id => id !== char.id) : [...prev, char.id]
+                                );
+                              }}
+                              className={`px-3 py-1.5 rounded-xl text-[11px] font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                                isSelected
+                                  ? 'bg-indigo-600 text-white shadow-xs'
+                                  : 'bg-white text-zinc-700 border border-indigo-200 hover:bg-indigo-50'
+                              }`}
+                            >
+                              <Lock className="w-3 h-3 text-amber-300" />
+                              <span>{char.name}</span>
+                              {isSelected && <Check className="w-3 h-3 text-white" />}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="bg-white/80 p-3 rounded-2xl border border-indigo-100 text-center space-y-2">
+                      <p className="text-[11px] text-zinc-600">
+                        No character profiles created yet. Auto-extract them from your manuscript to ensure identical facial designs across every chapter!
+                      </p>
+                      <button
+                        onClick={handleAutoExtractCharacters}
+                        disabled={isExtractingChars}
+                        className="text-xs font-bold text-indigo-700 hover:text-indigo-900 bg-indigo-100/70 px-3 py-1.5 rounded-xl transition-colors inline-flex items-center gap-1.5 cursor-pointer"
+                      >
+                        <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
+                        {isExtractingChars ? 'Extracting...' : 'Auto-Build Character Cast'}
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
 
             </div>
 
@@ -599,7 +713,7 @@ export const VisualDesignerStudio: React.FC<VisualDesignerStudioProps> = ({
                 {/* Mode Selector: Color vs B&W */}
                 <div className="space-y-2">
                   <label className="text-xs font-bold text-zinc-800 uppercase tracking-wider block">
-                    Illustration Color Mode
+                    {isGuides ? "Visual Color Palette Mode" : "Illustration Color Mode"}
                   </label>
                   <div className="grid grid-cols-2 gap-3">
                     <button
@@ -612,7 +726,7 @@ export const VisualDesignerStudio: React.FC<VisualDesignerStudioProps> = ({
                       }`}
                     >
                       <Palette className="w-4 h-4" />
-                      <span>Vibrant Full Color Storybook</span>
+                      <span>{isGuides ? "Vibrant Modern Tech Palette" : "Vibrant Full Color Storybook"}</span>
                     </button>
 
                     <button
@@ -625,7 +739,7 @@ export const VisualDesignerStudio: React.FC<VisualDesignerStudioProps> = ({
                       }`}
                     >
                       <Layers className="w-4 h-4 text-zinc-300" />
-                      <span>Black & White Line Art / Ink</span>
+                      <span>{isGuides ? "Clean Monochrome / Blueprint" : "Black & White Line Art / Ink"}</span>
                     </button>
                   </div>
                 </div>
@@ -633,16 +747,16 @@ export const VisualDesignerStudio: React.FC<VisualDesignerStudioProps> = ({
                 {/* Art Style Preset Dropdown */}
                 <div className="space-y-2">
                   <label className="text-xs font-bold text-zinc-800 uppercase tracking-wider block">
-                    Children's Art Style & Medium
+                    {isGuides ? "Technical Visual Style & Medium" : isNonFiction ? "Editorial Art Style & Medium" : isFiction ? "Cinematic Art Style & Medium" : "Children's Art Style & Medium"}
                   </label>
                   <select
                     value={selectedArtStyle}
                     onChange={(e) => setSelectedArtStyle(e.target.value)}
                     className="w-full bg-zinc-50 border border-zinc-300 rounded-xl p-3 text-xs font-semibold text-zinc-800 focus:ring-2 focus:ring-amber-500 focus:outline-none cursor-pointer"
                   >
-                    {ART_STYLES.map(style => (
+                    {currentCategoryStyles.map(style => (
                       <option key={style.id} value={style.name}>
-                        {style.name} — {style.desc.slice(0, 45)}...
+                        {style.name} — {style.desc.slice(0, 50)}...
                       </option>
                     ))}
                   </select>
@@ -651,13 +765,13 @@ export const VisualDesignerStudio: React.FC<VisualDesignerStudioProps> = ({
                 {/* Aspect Ratio Selector */}
                 <div className="space-y-2">
                   <label className="text-xs font-bold text-zinc-800 uppercase tracking-wider block">
-                    Page Layout / Aspect Ratio
+                    Visual Aspect Ratio & Layout
                   </label>
                   <div className="grid grid-cols-4 gap-2">
                     {[
-                      { id: '4:3', label: '4:3 Landscape', desc: 'Standard Storybook' },
-                      { id: '1:1', label: '1:1 Square', desc: 'Picture Book' },
-                      { id: '16:9', label: '16:9 Widescreen', desc: 'Double Page Spread' },
+                      { id: '16:9', label: '16:9 Widescreen', desc: isGuides ? 'Chapter Banner' : 'Double Spread' },
+                      { id: '4:3', label: '4:3 Landscape', desc: isGuides ? 'Standard Diagram' : 'Storybook' },
+                      { id: '1:1', label: '1:1 Square', desc: 'Inline Figure' },
                       { id: '3:4', label: '3:4 Portrait', desc: 'Full Page Inset' }
                     ].map(item => (
                       <button
@@ -681,15 +795,15 @@ export const VisualDesignerStudio: React.FC<VisualDesignerStudioProps> = ({
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
                     <label className="text-xs font-bold text-zinc-800 uppercase tracking-wider">
-                      Scene Description & Visual Directives
+                      {isGuides ? "Visual Directives & Architecture Prompt" : "Scene Description & Visual Directives"}
                     </label>
-                    <span className="text-[10px] text-zinc-400">Nano Banana AI Engine</span>
+                    <span className="text-[10px] text-zinc-400">Nano Banana AI Visual Engine</span>
                   </div>
                   <textarea
                     rows={4}
                     value={scenePrompt}
                     onChange={(e) => setScenePrompt(e.target.value)}
-                    placeholder="Describe the scene moment, character actions, emotional expression, environment, lighting, and props..."
+                    placeholder={isGuides ? "Describe the architecture diagram, technical concept, workflow, cloud components, or workspace scene..." : "Describe the scene moment, character actions, emotional expression, environment, lighting, and props..."}
                     className="w-full bg-zinc-50 border border-zinc-300 rounded-2xl p-3.5 text-xs text-zinc-800 focus:ring-2 focus:ring-amber-500 focus:outline-none resize-y font-sans leading-relaxed shadow-inner"
                   />
                 </div>
@@ -704,12 +818,12 @@ export const VisualDesignerStudio: React.FC<VisualDesignerStudioProps> = ({
                   {isGeneratingIllustration ? (
                     <>
                       <RefreshCw className="w-5 h-5 animate-spin" />
-                      <span>{generationStep || 'Nano Banana generating illustration...'}</span>
+                      <span>{generationStep || 'Nano Banana generating visual...'}</span>
                     </>
                   ) : (
                     <>
                       <Sparkles className="w-5 h-5 text-yellow-200 animate-pulse" />
-                      <span>Generate Chapter Illustration (Nano Banana)</span>
+                      <span>{isGuides ? "Generate Technical Visual (Nano Banana)" : "Generate Chapter Illustration (Nano Banana)"}</span>
                     </>
                   )}
                 </button>
@@ -721,10 +835,10 @@ export const VisualDesignerStudio: React.FC<VisualDesignerStudioProps> = ({
                   <div className="flex items-center justify-between border-b border-zinc-100 pb-3">
                     <div className="flex items-center gap-2">
                       <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
-                      <h3 className="text-sm font-bold text-zinc-900">Latest Rendered Illustration</h3>
+                      <h3 className="text-sm font-bold text-zinc-900">Latest Rendered Visual</h3>
                     </div>
                     <span className="text-xs font-bold px-3 py-1 bg-amber-50 text-amber-800 rounded-full border border-amber-200">
-                      {colorMode === 'black_and_white' ? 'Black & White Line Art' : 'Full Color'}
+                      {colorMode === 'black_and_white' ? (isGuides ? 'Monochrome' : 'B&W Line Art') : 'Full Color'}
                     </span>
                   </div>
 
@@ -732,24 +846,36 @@ export const VisualDesignerStudio: React.FC<VisualDesignerStudioProps> = ({
                   <div className="relative rounded-2xl overflow-hidden bg-zinc-900 border border-zinc-200 shadow-md group">
                     <img 
                       src={latestGeneratedImage} 
-                      alt="Generated chapter scene" 
+                      alt="Generated chapter visual" 
                       className="w-full max-h-[480px] object-contain mx-auto"
                       referrerPolicy="no-referrer"
                     />
                   </div>
 
                   {/* Insertion & Export Actions */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-1">
                     <button
                       type="button"
                       onClick={() => {
                         const illus = chapterIllustrations[0];
-                        if (illus) handleInsertIntoMarkdown(illus);
+                        if (illus) handleInsertIntoMarkdown(illus, 'top');
                       }}
-                      className="py-3 px-4 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-sm transition-all flex items-center justify-center gap-2 cursor-pointer"
+                      className="py-3 px-3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-sm transition-all flex items-center justify-center gap-1.5 cursor-pointer"
                     >
                       <FileText className="w-4 h-4 text-emerald-200" />
-                      <span>Insert Directly into Chapter Prose</span>
+                      <span>📌 Insert at Top (Header)</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const illus = chapterIllustrations[0];
+                        if (illus) handleInsertIntoMarkdown(illus, 'bottom');
+                      }}
+                      className="py-3 px-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow-sm transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                    >
+                      <ArrowRight className="w-4 h-4 text-indigo-200" />
+                      <span>📍 Insert at End</span>
                     </button>
 
                     <button
@@ -758,10 +884,24 @@ export const VisualDesignerStudio: React.FC<VisualDesignerStudioProps> = ({
                         const illus = chapterIllustrations[0];
                         if (illus) handleDownloadImage(illus);
                       }}
-                      className="py-3 px-4 bg-zinc-900 hover:bg-zinc-800 text-white font-bold text-xs rounded-xl shadow-sm transition-all flex items-center justify-center gap-2 cursor-pointer"
+                      className="py-3 px-3 bg-zinc-900 hover:bg-zinc-800 text-white font-bold text-xs rounded-xl shadow-sm transition-all flex items-center justify-center gap-1.5 cursor-pointer"
                     >
                       <Download className="w-4 h-4 text-emerald-400" />
-                      <span>Download High-Res PNG (.png)</span>
+                      <span>📥 Download PNG</span>
+                    </button>
+                  </div>
+
+                  {/* Quick Copy Markdown snippet */}
+                  <div className="flex justify-end pt-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const illus = chapterIllustrations[0];
+                        if (illus) handleCopyMarkdown(illus);
+                      }}
+                      className="text-xs text-indigo-600 hover:text-indigo-800 font-semibold flex items-center gap-1 underline cursor-pointer"
+                    >
+                      <span>📋 Copy Markdown Tag to Clipboard</span>
                     </button>
                   </div>
 
@@ -777,7 +917,7 @@ export const VisualDesignerStudio: React.FC<VisualDesignerStudioProps> = ({
                         value={feedbackInput}
                         onChange={(e) => setFeedbackInput(e.target.value)}
                         onKeyDown={(e) => e.key === 'Enter' && handleGenerateIllustration(feedbackInput)}
-                        placeholder="e.g. 'Make the little fox smile bigger and add falling autumn leaves in the background'"
+                        placeholder={isGuides ? "e.g. 'Add glowing database icons, make lines sharper, and use a dark background'" : "e.g. 'Make the character smile and add sunset glow'"}
                         className="flex-1 bg-white border border-zinc-300 rounded-xl px-3.5 py-2 text-xs text-zinc-800 focus:outline-none focus:ring-2 focus:ring-amber-500"
                       />
                       <button
@@ -790,7 +930,6 @@ export const VisualDesignerStudio: React.FC<VisualDesignerStudioProps> = ({
                       </button>
                     </div>
                   </div>
-
                 </div>
               )}
 
