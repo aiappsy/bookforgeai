@@ -886,7 +886,6 @@ export async function generateChapter(
          ![Visual: Specific detailed description of the diagram, workflow, or scene](placeholder:visual_${Date.now()}_1)
          Do NOT paste base64 or external links. Use this clean placeholder syntax so the visual engine can autoplace the image later.`,
       config: {
-        thinkingConfig: { thinkingBudget: 2048 },
         systemInstruction: (systemPrompt ? `${systemPrompt}\n\n` : '') + defaultSystemPersona
       }
     });
@@ -901,8 +900,8 @@ export async function generateChapter(
     let timeoutId: any = null;
     const timeoutPromise = new Promise<never>((_, reject) => {
       timeoutId = setTimeout(() => {
-        reject(new Error('Generation timed out after 3 minutes. Click Re-generate to try again.'));
-      }, 180000);
+        reject(new Error('Generation timed out. Click Re-generate to try again.'));
+      }, 120000);
     });
 
     try {
@@ -919,8 +918,8 @@ export async function generateChapter(
     if (e.message?.includes('cancelled') || signal?.aborted) {
       throw e;
     }
-    console.warn("Flash model failed for chapter generation. Retrying with gemini-3.7-flash...", e);
-    return await withRetry(() => generate("gemini-3.7-flash"), !!apiKey);
+    console.warn("Flash model 3.7 failed for chapter generation. Retrying with high-velocity gemini-2.5-flash...", e);
+    return await withRetry(() => generate("gemini-2.5-flash"), !!apiKey);
   }
 }
 
@@ -3236,17 +3235,7 @@ Composition: Masterful visual storytelling, balanced focal point, rich environme
 Output ONLY the final detailed AI generation prompt string. No code fences, no conversational text.`;
   }
 
-  let engineeredPrompt = scenePrompt;
-  try {
-    const engineeredRes = await withRetry(() => ai.models.generateContent({
-      model: "gemini-3.7-flash",
-      contents: masterArtDirectorPrompt
-    }), !!apiKey);
-    engineeredPrompt = (engineeredRes.text || scenePrompt).trim();
-  } catch (e) {
-    console.warn("Art director prompt engineering failed, using base prompt with directives:", e);
-    engineeredPrompt = `${scenePrompt}. ${colorModeDirective}. Art Style: ${artStyle}. ${characterConsistencyInstruction}`;
-  }
+  const engineeredPrompt = `${scenePrompt}. ${colorModeDirective} Art Style: ${artStyle}. ${characterConsistencyInstruction}`.trim();
 
   console.info("Nano Banana scene generation request:", engineeredPrompt);
 

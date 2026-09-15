@@ -2416,54 +2416,6 @@ export default function App() {
       }
 
       let finalContent = content;
-      const detectedPlaceholders = detectManuscriptVisualPlaceholders(content);
-
-      if (detectedPlaceholders.length > 0) {
-        setGeneratingStep(`Auto-rendering ${detectedPlaceholders.length} indicated visual(s) with Nano Banana...`);
-        const autoIllustrations: ChapterIllustration[] = [];
-        const isGuides = category === 'guides' || category === 'white_paper';
-
-        for (let i = 0; i < detectedPlaceholders.length; i++) {
-          const ph = detectedPlaceholders[i];
-          try {
-            setGeneratingStep(`Rendering visual ${i + 1} of ${detectedPlaceholders.length}: "${ph.description.slice(0, 30)}..."`);
-            const b64 = await generateSceneIllustrationWithNanoBanana({
-              scenePrompt: ph.description || 'Technical Architecture Blueprint',
-              chapterTitle: chapter.title,
-              colorMode: 'color',
-              artStyle: isGuides ? 'Modern Tech & SaaS Vector' : 'Digital Illustration',
-              aspectRatio: isGuides ? '16:9' : '4:3',
-              bookCategory: category,
-              apiKey: customApiKey
-            });
-
-            if (b64) {
-              const newId = 'illus_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
-              const newIll: ChapterIllustration = {
-                id: newId,
-                chapterId: chapter.id,
-                sceneTitle: ph.description.slice(0, 50),
-                prompt: ph.description,
-                imageUrl: b64,
-                colorMode: 'color',
-                artStyle: isGuides ? 'Modern Tech & SaaS Vector' : 'Digital Illustration',
-                aspectRatio: isGuides ? '16:9' : '4:3',
-                characterNamesUsed: [],
-                createdAt: Date.now(),
-                insertedInMarkdown: true
-              };
-              autoIllustrations.push(newIll);
-              finalContent = finalContent.replace(ph.rawMatch, `![${ph.description}](asset:${newId})`);
-            }
-          } catch (imgErr) {
-            console.warn("Auto-rendering placeholder error:", imgErr);
-          }
-        }
-
-        if (autoIllustrations.length > 0) {
-          setChapterIllustrations(prev => [...autoIllustrations, ...prev]);
-        }
-      }
 
       setChapters(prev => prev.map(c => {
         if (c.id !== chapterId) return c;
