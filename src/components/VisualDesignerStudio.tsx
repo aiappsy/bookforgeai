@@ -853,17 +853,17 @@ export const VisualDesignerStudio: React.FC<VisualDesignerStudioProps> = ({
                   </div>
 
                   {/* Insertion & Export Actions */}
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-1">
+                  <div className="grid grid-cols-1 sm:grid-cols-4 gap-2.5 pt-1">
                     <button
                       type="button"
                       onClick={() => {
                         const illus = chapterIllustrations[0];
                         if (illus) handleInsertIntoMarkdown(illus, 'top');
                       }}
-                      className="py-3 px-3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-sm transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                      className="py-2.5 px-3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-sm transition-all flex items-center justify-center gap-1.5 cursor-pointer"
                     >
                       <FileText className="w-4 h-4 text-emerald-200" />
-                      <span>📌 Insert at Top (Header)</span>
+                      <span>📌 Insert at Top</span>
                     </button>
 
                     <button
@@ -872,11 +872,22 @@ export const VisualDesignerStudio: React.FC<VisualDesignerStudioProps> = ({
                         const illus = chapterIllustrations[0];
                         if (illus) handleInsertIntoMarkdown(illus, 'bottom');
                       }}
-                      className="py-3 px-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow-sm transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                      className="py-2.5 px-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow-sm transition-all flex items-center justify-center gap-1.5 cursor-pointer"
                     >
                       <ArrowRight className="w-4 h-4 text-indigo-200" />
                       <span>📍 Insert at End</span>
                     </button>
+
+                    {onNavigateToChapter && (
+                      <button
+                        type="button"
+                        onClick={() => onNavigateToChapter(selectedChapterId)}
+                        className="py-2.5 px-3 bg-zinc-100 hover:bg-zinc-200 text-zinc-800 font-bold text-xs rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                      >
+                        <BookOpen className="w-4 h-4 text-zinc-600" />
+                        <span>📖 View in Chapter</span>
+                      </button>
+                    )}
 
                     <button
                       type="button"
@@ -884,7 +895,7 @@ export const VisualDesignerStudio: React.FC<VisualDesignerStudioProps> = ({
                         const illus = chapterIllustrations[0];
                         if (illus) handleDownloadImage(illus);
                       }}
-                      className="py-3 px-3 bg-zinc-900 hover:bg-zinc-800 text-white font-bold text-xs rounded-xl shadow-sm transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                      className="py-2.5 px-3 bg-zinc-900 hover:bg-zinc-800 text-white font-bold text-xs rounded-xl shadow-sm transition-all flex items-center justify-center gap-1.5 cursor-pointer"
                     >
                       <Download className="w-4 h-4 text-emerald-400" />
                       <span>📥 Download PNG</span>

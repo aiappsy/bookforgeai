@@ -853,31 +853,23 @@ function ChapterView({
         </div>
       </div>
 
-      {/* Indicated Visual Placeholders Auto-Generate Banner */}
+      {/* Indicated Visual Placeholders Auto-Generate Bar */}
       {placeholders.length > 0 && (
-        <div className="bg-gradient-to-r from-amber-500/10 via-orange-500/10 to-indigo-500/10 border border-amber-300/80 p-4 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-xs">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-amber-500 to-orange-500 text-white flex items-center justify-center shadow-xs flex-shrink-0">
-              <Sparkles className="w-5 h-5 text-yellow-100" />
-            </div>
-            <div>
-              <h4 className="text-xs font-bold text-zinc-900 flex items-center gap-2 flex-wrap">
-                <span>{placeholders.length} Visual Moment{placeholders.length > 1 ? 's' : ''} Indicated in Manuscript</span>
-                <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-200 font-bold">Ready to Auto-Place</span>
-              </h4>
-              <p className="text-[11px] text-zinc-600 mt-0.5">
-                The manuscript specifies positions for visuals. Click below to automatically generate and autoplace them in-line.
-              </p>
-            </div>
+        <div className="bg-zinc-100/80 border border-zinc-200/90 px-4 py-2.5 rounded-xl flex items-center justify-between gap-3 shadow-2xs">
+          <div className="flex items-center gap-2 text-xs text-zinc-700">
+            <Sparkles className="w-4 h-4 text-amber-500 flex-shrink-0" />
+            <span>
+              <strong className="text-zinc-900">{placeholders.length} visual moment{placeholders.length > 1 ? 's' : ''}</strong> suggested in this chapter
+            </span>
           </div>
           {onBatchGenerateVisuals && (
             <button
               onClick={onBatchGenerateVisuals}
               disabled={isBatchGeneratingVisuals}
-              className="px-4 py-2 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white text-xs font-bold rounded-xl shadow-xs flex items-center gap-2 cursor-pointer disabled:opacity-50 flex-shrink-0"
+              className="px-3 py-1.5 bg-zinc-900 hover:bg-zinc-800 text-white text-xs font-bold rounded-lg shadow-xs flex items-center gap-1.5 cursor-pointer disabled:opacity-50 flex-shrink-0 transition-all"
             >
-              {isBatchGeneratingVisuals ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4 text-yellow-200" />}
-              <span>{isBatchGeneratingVisuals ? 'Generating Visuals...' : `⚡ Auto-Generate All (${placeholders.length})`}</span>
+              {isBatchGeneratingVisuals ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5 text-amber-300" />}
+              <span>{isBatchGeneratingVisuals ? 'Generating...' : `Auto-Generate All (${placeholders.length})`}</span>
             </button>
           )}
         </div>
@@ -4863,64 +4855,59 @@ export default function App() {
           document.body.removeChild(a);
         };
 
-        // CASE 1: Unrendered Placeholder
+        // CASE 1: Unrendered Placeholder (Sleek, compact inline card)
         if (!storedImage && isPlaceholder) {
           return (
-            <div className="my-6 border-2 border-dashed border-amber-300/80 bg-gradient-to-r from-amber-50/80 via-orange-50/50 to-indigo-50/50 rounded-2xl p-5 sm:p-6 text-center relative overflow-hidden transition-all shadow-xs">
-              <div className="max-w-md mx-auto space-y-2">
-                <div className="w-10 h-10 mx-auto rounded-xl bg-amber-500 text-white flex items-center justify-center shadow-xs">
-                  <Sparkles className="w-5 h-5" />
+            <div className="my-5 rounded-xl border border-zinc-200/90 bg-zinc-50/80 hover:bg-zinc-50 p-3 sm:p-3.5 transition-all shadow-2xs">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                {/* Left: Icon Badge & Description */}
+                <div className="flex items-start sm:items-center gap-2.5 min-w-0 flex-1">
+                  <div className="w-7 h-7 rounded-lg bg-amber-100 border border-amber-200 text-amber-800 flex items-center justify-center flex-shrink-0">
+                    <Sparkles className="w-3.5 h-3.5 text-amber-600" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-amber-700 bg-amber-50 border border-amber-200/60 px-1.5 py-0.5 rounded">
+                        Suggested Visual
+                      </span>
+                    </div>
+                    <p className="text-xs font-semibold text-zinc-800 truncate mt-0.5" title={alt}>
+                      {alt || 'Visual Diagram / Concept'}
+                    </p>
+                  </div>
                 </div>
-                <h4 className="text-xs font-bold text-zinc-900 uppercase tracking-wider">
-                  Indicated Visual Placeholder
-                </h4>
-                <p className="text-xs text-zinc-800 font-semibold">
-                  "{alt || 'Visual Diagram / Concept'}"
-                </p>
-                <p className="text-[11px] text-zinc-500">
-                  The manuscript indicates an illustrative graphic at this location.
-                </p>
-              </div>
 
-              <div className="mt-4 flex flex-wrap items-center justify-center gap-2.5">
-                <button
-                  type="button"
-                  disabled={isGenerating}
-                  onClick={() => handleGenerateOrRegenerate()}
-                  className="px-4 py-2 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white text-xs font-bold rounded-xl shadow-xs flex items-center gap-2 cursor-pointer disabled:opacity-50"
-                  title="Generate dynamic AI visual (Imagen 3 / AI SVG blueprint in seconds)"
-                >
-                  {isGenerating ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5 text-yellow-200" />}
-                  <span>{isGenerating ? 'Rendering Visual...' : '✨ Generate Visual'}</span>
-                </button>
+                {/* Right: Actions */}
+                <div className="flex items-center gap-2 flex-shrink-0 self-end sm:self-center">
+                  <button
+                    type="button"
+                    disabled={isGenerating}
+                    onClick={() => handleGenerateOrRegenerate()}
+                    className="px-3.5 py-1.5 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white text-xs font-bold rounded-lg shadow-xs flex items-center gap-1.5 cursor-pointer disabled:opacity-50 transition-all"
+                    title="Generate this visual in 1-2 seconds"
+                  >
+                    {isGenerating ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5 text-yellow-200" />}
+                    <span>{isGenerating ? 'Generating...' : 'Generate Visual'}</span>
+                  </button>
 
-                <button
-                  type="button"
-                  disabled={isGenerating}
-                  onClick={() => handleGenerateOrRegenerate(undefined, true)}
-                  className="px-3.5 py-2 bg-slate-900 hover:bg-slate-800 text-cyan-400 border border-slate-700 text-xs font-bold rounded-xl shadow-xs flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
-                  title="Instantly generate high-tech architecture blueprint in 0.01 seconds"
-                >
-                  <span>⚡ Instant Blueprint (0s)</span>
-                </button>
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="p-1.5 bg-white border border-zinc-300 hover:bg-zinc-100 text-zinc-600 rounded-lg shadow-2xs transition-colors cursor-pointer"
+                    title="Upload custom image"
+                  >
+                    <UploadCloud className="w-3.5 h-3.5 text-indigo-600" />
+                  </button>
 
-                <button
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  className="px-3.5 py-2 bg-white border border-zinc-300 hover:bg-zinc-50 text-zinc-700 text-xs font-semibold rounded-xl shadow-2xs flex items-center gap-1.5 cursor-pointer"
-                >
-                  <UploadCloud className="w-3.5 h-3.5 text-indigo-600" />
-                  <span>Upload Image</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={handleDeleteFromManuscript}
-                  className="px-3 py-2 text-zinc-400 hover:text-red-600 text-xs font-medium cursor-pointer"
-                  title="Remove this placeholder marker"
-                >
-                  Dismiss
-                </button>
+                  <button
+                    type="button"
+                    onClick={handleDeleteFromManuscript}
+                    className="p-1.5 text-zinc-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
+                    title="Remove this visual marker"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
               </div>
 
               <input
