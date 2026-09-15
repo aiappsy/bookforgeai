@@ -152,6 +152,29 @@ function parseInlineFormatting(text: string, baseSize = 24): TextRun[] {
 }
 
 /**
+ * Resolves clean markdown asset references (`![alt](asset:id)`) into full base64 images
+ * for DOCX, EPUB, and PDF exports. Also cleans up any unresolved placeholder tags.
+ */
+export function resolveMarkdownAssetImages(markdown: string, illustrations?: any[]): string {
+  if (!markdown) return '';
+  let resolved = markdown;
+
+  if (illustrations && illustrations.length > 0) {
+    const assetMap = new Map(illustrations.map((i: any) => [i.id, i.imageUrl]));
+    resolved = resolved.replace(/!\[(.*?)\]\(asset:([^\s\)]+)\)/g, (match, alt, id) => {
+      const imageUrl = assetMap.get(id);
+      return imageUrl ? `![${alt}](${imageUrl})` : match;
+    });
+  }
+
+  // Remove unresolved placeholder tags from final export so clean prose is published
+  resolved = resolved.replace(/!\[(.*?)\]\((?:placeholder(?::[^\)\s]+)?|)\)\n*/g, '');
+  resolved = resolved.replace(/\[(?:IMAGE|ILLUSTRATION|VISUAL|FIGURE):\s*([^\]]+)\]\n*/gi, '');
+
+  return resolved;
+}
+
+/**
  * Converts chapter markdown content into properly formatted Docx Paragraph / Image items.
  */
 function parseChapterMarkdownToDocx(markdown: string, maxImgWidthPx = 420): Paragraph[] {
@@ -536,26 +559,30 @@ export async function createDocxBlobAndTrim(bookDetails: any, chapters: Chapter[
       }),
     },
     children: [
-      ...filteredChapters.filter(ch => !ch.title.toLowerCase().includes('about the author')).flatMap((chapter, idx) => {
-        const chapterTitle = chapter.title || `Chapter ${idx + 1}`;
-        const chapterContent = chapter.content || "";
-        const parsedDocxParagraphs = parseChapterMarkdownToDocx(chapterContent, maxInlineImgWidthPx);
+      ...(() => {
+        const illustrationsList = bookDetails?.chapterIllustrations || (chapters as any).chapterIllustrations || [];
+        return filteredChapters.filter(ch => !ch.title.toLowerCase().includes('about the author')).flatMap((chapter, idx) => {
+          const chapterTitle = chapter.title || `Chapter ${idx + 1}`;
+          const chapterContent = resolveMarkdownAssetImages(chapter.content || "", illustrationsList);
+          const parsedDocxParagraphs = parseChapterMarkdownToDocx(chapterContent, maxInlineImgWidthPx);
 
-        return [
-          new Paragraph({
-            text: chapterTitle.toUpperCase(),
-            heading: HeadingLevel.HEADING_1,
-            alignment: AlignmentType.CENTER,
-            spacing: { before: 800, after: 800 },
-            pageBreakBefore: idx > 0,
-          }),
-          ...parsedDocxParagraphs
-        ];
-      }),
+          return [
+            new Paragraph({
+              text: chapterTitle.toUpperCase(),
+              heading: HeadingLevel.HEADING_1,
+              alignment: AlignmentType.CENTER,
+              spacing: { before: 800, after: 800 },
+              pageBreakBefore: idx > 0,
+            }),
+            ...parsedDocxParagraphs
+          ];
+        });
+      })(),
 
       ...(() => {
         const authorChapter = filteredChapters.find(ch => ch.title.toLowerCase().includes('about the author'));
-        const authorContent = bookDetails?.aboutAuthor || authorChapter?.content;
+        const illustrationsList = bookDetails?.chapterIllustrations || (chapters as any).chapterIllustrations || [];
+        const authorContent = resolveMarkdownAssetImages(bookDetails?.aboutAuthor || authorChapter?.content || "", illustrationsList);
         if (!authorContent) return [];
 
         return [
@@ -731,6 +758,7 @@ p.first-paragraph {
 
   const chapterManifestItems: string[] = [];
   const chapterSpineItems: string[] = [];
+  const illustrationsList = bookDetails?.chapterIllustrations || (chapters as any).chapterIllustrations || [];
 
   validChapters.forEach((ch, idx) => {
     const chNum = idx + 1;
@@ -740,14 +768,18 @@ p.first-paragraph {
     chapterManifestItems.push(`<item id="${fileId}" href="${fileName}" media-type="application/xhtml+xml"/>`);
     chapterSpineItems.push(`<itemref idref="${fileId}"/>`);
 
-    const paragraphs = (ch.content || "")
+    const resolvedChapterContent = resolveMarkdownAssetImages(ch.content || "", illustrationsList);
+    const paragraphs = resolvedChapterContent
       .split(/\n\n+/)
       .map(p => p.trim())
       .filter(Boolean);
 
     let bodyHtml = `<h1>${escapeXml(ch.title)}</h1>\n`;
     paragraphs.forEach((p, pIdx) => {
-      if (p.startsWith('# ')) {
+      const imgMatch = p.match(/^!\[(.*?)\]\((data:image\/[a-zA-Z]+;base64,[^\s\)]+)\)$/);
+      if (imgMatch) {
+        bodyHtml += `<div class="chapter-illustration" style="text-align: center; margin: 2em 0;"><img src="${imgMatch[2]}" alt="${escapeXml(imgMatch[1])}" style="max-width: 100%; height: auto; border-radius: 8px;" /><p class="caption" style="font-size: 0.85em; color: #666; font-style: italic; margin-top: 0.5em;">${escapeXml(imgMatch[1])}</p></div>\n`;
+      } else if (p.startsWith('# ')) {
         bodyHtml += `<h1>${escapeXml(p.replace(/^#\s+/, ''))}</h1>\n`;
       } else if (p.startsWith('## ')) {
         bodyHtml += `<h2>${escapeXml(p.replace(/^##\s+/, ''))}</h2>\n`;

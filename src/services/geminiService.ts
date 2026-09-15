@@ -880,7 +880,11 @@ export async function generateChapter(
          * MASTERFUL BURSTINESS & CADENCE: Alternate sentence lengths dynamically. Mix ultra-short punchy declarations with expansive descriptive observations.
          * ${isTechnicalDoc
              ? 'PRACTICAL CLARITY & FACTUAL PRECISION: Write with direct authority, clear actionable terminology, concrete examples/checklists, and zero fictional melodrama.'
-             : 'RICH SENSORY DETAIL & ACTIVE VERBS: Write with visceral clarity, emotional resonance, grounded metaphors, and natural authority.'}`,
+             : 'RICH SENSORY DETAIL & ACTIVE VERBS: Write with visceral clarity, emotional resonance, grounded metaphors, and natural authority.'}
+      - STRATEGIC INLINE VISUAL PLACEHOLDERS:
+         At 1 to 2 pivotal conceptual moments (e.g. system architecture diagrams, procedural flowcharts, terminal workflows, or key narrative scenes), insert a clean visual placeholder on its own line between paragraphs:
+         ![Visual: Specific detailed description of the diagram, workflow, or scene](placeholder:visual_${Date.now()}_1)
+         Do NOT paste base64 or external links. Use this clean placeholder syntax so the visual engine can autoplace the image later.`,
       config: {
         thinkingConfig: { thinkingBudget: 2048 },
         systemInstruction: (systemPrompt ? `${systemPrompt}\n\n` : '') + defaultSystemPersona
@@ -3367,6 +3371,138 @@ export function generateProceduralSceneSvg(
 
   return `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(svg)))}`;
 }
+
+export interface ManuscriptVisualPlaceholder {
+  rawMatch: string;
+  placeholderId: string;
+  description: string;
+  index: number;
+}
+
+/**
+ * Detects all unrendered visual placeholders inside manuscript prose.
+ * Matches:
+ * 1. Markdown placeholder syntax: ![Description](placeholder:id), ![Description](placeholder), ![Description]()
+ * 2. Bracketed tags: [IMAGE: Description], [ILLUSTRATION: Description], [VISUAL: Description], [FIGURE: Description]
+ */
+export function detectManuscriptVisualPlaceholders(content: string): ManuscriptVisualPlaceholder[] {
+  if (!content) return [];
+  const results: ManuscriptVisualPlaceholder[] = [];
+
+  // 1. Markdown placeholder syntax
+  const mdRegex = /!\[([^\]]+)\]\((?:placeholder(?::([^\)\s]+))?|)\)/g;
+  let match: RegExpExecArray | null;
+  while ((match = mdRegex.exec(content)) !== null) {
+    const description = match[1].trim();
+    const explicitId = match[2];
+    const placeholderId = explicitId || ('ph_' + Math.random().toString(36).substring(2, 9));
+    results.push({
+      rawMatch: match[0],
+      placeholderId,
+      description,
+      index: match.index
+    });
+  }
+
+  // 2. Bracketed text syntax
+  const bracketRegex = /\[(?:IMAGE|ILLUSTRATION|VISUAL|FIGURE):\s*([^\]]+)\]/gi;
+  while ((match = bracketRegex.exec(content)) !== null) {
+    const description = match[1].trim();
+    const placeholderId = 'ph_' + Math.random().toString(36).substring(2, 9);
+    results.push({
+      rawMatch: match[0],
+      placeholderId,
+      description,
+      index: match.index
+    });
+  }
+
+  return results;
+}
+
+/**
+ * Analyzes a chapter manuscript and intelligently decides 1 to 3 pivotal moments where
+ * a visual diagram, flowchart, technical schematic, or illustration should be inserted.
+ */
+export async function autoSuggestChapterVisualPlaceholders(
+  chapterContent: string,
+  chapterTitle: string,
+  bookCategory: string,
+  apiKey?: string
+): Promise<{ updatedContent: string; newPlaceholdersCount: number }> {
+  if (!chapterContent || chapterContent.trim() === '') {
+    return { updatedContent: chapterContent, newPlaceholdersCount: 0 };
+  }
+  const ai = getAI(apiKey);
+  const isGuides = bookCategory === 'guides' || bookCategory === 'white_paper';
+
+  const prompt = `You are an elite Book Designer and Visual Information Architect.
+Analyze the following chapter manuscript ("${chapterTitle}") and identify 1 to 3 pivotal moments where an illustrative visual diagram, flowchart, architecture blueprint, or scene visual will provide maximum reader value.
+
+CHAPTER CONTENT:
+${chapterContent.slice(0, 9000)}
+
+TASK:
+Pick 1 to 3 distinct paragraphs or sections where inserting a visual adds clarity or narrative depth.
+For each visual moment:
+1. "anchorText": A short, verbatim snippet (15 to 30 characters) from the end of an existing paragraph in the chapter where the visual should be placed immediately after.
+2. "visualDescription": A crisp, highly descriptive prompt for the visual (e.g., "${isGuides ? 'Modern System Architecture Blueprint: Antigravity IDE connected to Gemini CLI and GitHub Actions' : 'Dramatic Scene: Henrik staring at his multi-currency dashboard with disbelief in Oslo'}").
+
+Return a JSON array of objects with keys: "anchorText", "visualDescription". Output ONLY valid JSON.`;
+
+  try {
+    const response = await withRetry(() => ai.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: prompt,
+      config: {
+        responseMimeType: "application/json"
+      }
+    }), !!apiKey);
+
+    const text = (response.text || "[]").replace(/```json/g, '').replace(/```/g, '').trim();
+    const suggestions = JSON.parse(text);
+    if (!Array.isArray(suggestions) || suggestions.length === 0) {
+      return { updatedContent: chapterContent, newPlaceholdersCount: 0 };
+    }
+
+    let updatedContent = chapterContent;
+    let placedCount = 0;
+
+    for (const item of suggestions) {
+      if (!item.anchorText || !item.visualDescription) continue;
+      const phId = 'ph_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
+      const placeholderMarkdown = `\n\n![${item.visualDescription}](placeholder:${phId})\n\n`;
+
+      const anchorIdx = updatedContent.indexOf(item.anchorText);
+      if (anchorIdx !== -1) {
+        const insertPos = anchorIdx + item.anchorText.length;
+        updatedContent = updatedContent.slice(0, insertPos) + placeholderMarkdown + updatedContent.slice(insertPos);
+        placedCount++;
+      }
+    }
+
+    // Fallback if anchor snippets weren't exact match
+    if (placedCount === 0 && suggestions.length > 0) {
+      const first = suggestions[0];
+      const phId = 'ph_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
+      const placeholderMarkdown = `\n\n![${first.visualDescription}](placeholder:${phId})\n\n`;
+      const headingMatch = updatedContent.match(/^(#[^\n]+\n+)/);
+      if (headingMatch) {
+        updatedContent = updatedContent.replace(headingMatch[0], `${headingMatch[0]}${placeholderMarkdown}`);
+        placedCount++;
+      } else {
+        updatedContent = `${placeholderMarkdown}${updatedContent}`;
+        placedCount++;
+      }
+    }
+
+    return { updatedContent, newPlaceholdersCount: placedCount };
+  } catch (e) {
+    console.error("Failed to auto-suggest visual placeholders:", e);
+    return { updatedContent: chapterContent, newPlaceholdersCount: 0 };
+  }
+}
+
 
 
 

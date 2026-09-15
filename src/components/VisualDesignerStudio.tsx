@@ -361,7 +361,7 @@ export const VisualDesignerStudio: React.FC<VisualDesignerStudioProps> = ({
   };
 
   const handleInsertIntoMarkdown = (illus: ChapterIllustration, position: 'top' | 'bottom' = 'top') => {
-    const markdownTag = `\n\n![Illustration: ${illus.sceneTitle}](${illus.imageUrl})\n*${illus.sceneTitle} (${illus.colorMode === 'black_and_white' ? 'Monochrome' : 'Full Color'})*\n\n`;
+    const markdownTag = `\n\n![Illustration: ${illus.sceneTitle}](asset:${illus.id})\n*${illus.sceneTitle} (${illus.colorMode === 'black_and_white' ? 'Monochrome' : 'Full Color'})*\n\n`;
     onInsertIllustrationIntoChapter(illus.chapterId, markdownTag, position);
     
     const updated = chapterIllustrations.map(item => item.id === illus.id ? { ...item, insertedInMarkdown: true } : item);
@@ -370,9 +370,9 @@ export const VisualDesignerStudio: React.FC<VisualDesignerStudioProps> = ({
   };
 
   const handleCopyMarkdown = (illus: ChapterIllustration) => {
-    const markdownTag = `![Illustration: ${illus.sceneTitle}](${illus.imageUrl})`;
+    const markdownTag = `![Illustration: ${illus.sceneTitle}](asset:${illus.id})`;
     navigator.clipboard.writeText(markdownTag);
-    showToast("Copied Markdown tag to clipboard!");
+    showToast("Copied clean Markdown asset tag to clipboard!");
   };
 
   const handleDownloadImage = (illus: ChapterIllustration) => {

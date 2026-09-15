@@ -29,6 +29,10 @@ import {
   extractLearnedRulesFromFeedback,
   summarizeChapterForContinuity,
   extractExistingCharacterNames,
+  detectManuscriptVisualPlaceholders,
+  autoSuggestChapterVisualPlaceholders,
+  generateSceneIllustrationWithNanoBanana,
+  ManuscriptVisualPlaceholder,
   LearnedRule,
   ContinuityContext,
   CharacterProfile,
@@ -701,7 +705,11 @@ function ChapterView({
   onDelete, 
   onUndo, 
   canUndo, 
-  components 
+  components,
+  onAutoPlaceVisuals,
+  onBatchGenerateVisuals,
+  isAutoPlacingVisuals,
+  isBatchGeneratingVisuals
 }: { 
   chapter: Chapter, 
   onContentChange: (c: string) => void, 
@@ -712,12 +720,17 @@ function ChapterView({
   onDelete?: () => void, 
   onUndo?: () => void, 
   canUndo?: boolean, 
-  components: any 
+  components: any,
+  onAutoPlaceVisuals?: () => void,
+  onBatchGenerateVisuals?: () => void,
+  isAutoPlacingVisuals?: boolean,
+  isBatchGeneratingVisuals?: boolean
 }) {
   const [isEditing, setIsEditing] = useState(false);
   const isAuthorPage = chapter.title.toLowerCase().includes('about the author');
 
   const report = useMemo(() => analyzeAiScore(chapter.content), [chapter.content]);
+  const placeholders = useMemo(() => detectManuscriptVisualPlaceholders(chapter.content), [chapter.content]);
 
   return (
     <div className="space-y-4">
@@ -771,14 +784,25 @@ function ChapterView({
         </div>
 
         <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+          {onAutoPlaceVisuals && (
+            <button
+              onClick={onAutoPlaceVisuals}
+              disabled={isAutoPlacingVisuals}
+              className="flex-1 sm:flex-none justify-center items-center gap-1.5 bg-gradient-to-r from-amber-50 to-orange-50 hover:from-amber-100 hover:to-orange-100 text-amber-900 border border-amber-300 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all shadow-2xs cursor-pointer disabled:opacity-50"
+              title="Have AI scan the chapter to determine 1-3 strategic locations and insert visual placeholders"
+            >
+              {isAutoPlacingVisuals ? <RefreshCw className="w-3.5 h-3.5 animate-spin text-amber-600" /> : <Sparkles className="w-3.5 h-3.5 text-amber-600" />}
+              <span>{isAutoPlacingVisuals ? 'Placing Markers...' : '🪄 AI Auto-Place Visuals'}</span>
+            </button>
+          )}
           {onIllustrate && (
             <button
               onClick={onIllustrate}
               className="flex-1 sm:flex-none justify-center items-center gap-1.5 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all shadow-sm cursor-pointer"
-              title="Generate cohesive children's storybook scene illustrations using Nano Banana AI"
+              title="Open Visual Designer Studio to design custom chapter graphics and blueprints"
             >
               <Palette className="w-3.5 h-3.5 text-yellow-200" />
-              <span>Illustrate Scene (Nano Banana)</span>
+              <span>Visual Studio</span>
             </button>
           )}
           {onShowVersionHistory && (
@@ -807,7 +831,7 @@ function ChapterView({
               className="flex-1 sm:flex-none justify-center items-center gap-1.5 bg-emerald-50 text-emerald-800 hover:bg-emerald-100 border border-emerald-200 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors shadow-2xs cursor-pointer"
               title="Humanize prose, fix sentence rhythm burstiness, and remove AI buzzwords"
             >
-              <Wand2 className="w-3.5 h-3.5 text-emerald-600" /> Humanize & Remove AI Markers
+              <Wand2 className="w-3.5 h-3.5 text-emerald-600" /> Humanize
             </button>
           )}
           <button
@@ -827,6 +851,36 @@ function ChapterView({
           )}
         </div>
       </div>
+
+      {/* Indicated Visual Placeholders Auto-Generate Banner */}
+      {placeholders.length > 0 && (
+        <div className="bg-gradient-to-r from-amber-500/10 via-orange-500/10 to-indigo-500/10 border border-amber-300/80 p-4 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-xs">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-amber-500 to-orange-500 text-white flex items-center justify-center shadow-xs flex-shrink-0">
+              <Sparkles className="w-5 h-5 text-yellow-100" />
+            </div>
+            <div>
+              <h4 className="text-xs font-bold text-zinc-900 flex items-center gap-2 flex-wrap">
+                <span>{placeholders.length} Visual Moment{placeholders.length > 1 ? 's' : ''} Indicated in Manuscript</span>
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-200 font-bold">Ready to Auto-Place</span>
+              </h4>
+              <p className="text-[11px] text-zinc-600 mt-0.5">
+                The manuscript specifies positions for visuals. Click below to automatically generate and autoplace them in-line.
+              </p>
+            </div>
+          </div>
+          {onBatchGenerateVisuals && (
+            <button
+              onClick={onBatchGenerateVisuals}
+              disabled={isBatchGeneratingVisuals}
+              className="px-4 py-2 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white text-xs font-bold rounded-xl shadow-xs flex items-center gap-2 cursor-pointer disabled:opacity-50 flex-shrink-0"
+            >
+              {isBatchGeneratingVisuals ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4 text-yellow-200" />}
+              <span>{isBatchGeneratingVisuals ? 'Generating Visuals...' : `⚡ Auto-Generate All (${placeholders.length})`}</span>
+            </button>
+          )}
+        </div>
+      )}
 
       <div className="bg-white rounded-2xl border border-zinc-200 shadow-sm relative overflow-hidden">
         {isEditing ? (
@@ -1294,6 +1348,8 @@ export default function App() {
   // Visual Designer & Illustration Pipeline (Character Bible & Chapter Illustrations)
   const [characterBible, setCharacterBible] = useState<CharacterProfile[]>([]);
   const [chapterIllustrations, setChapterIllustrations] = useState<ChapterIllustration[]>([]);
+  const [isBatchGeneratingVisuals, setIsBatchGeneratingVisuals] = useState<boolean>(false);
+  const [isAutoPlacingVisuals, setIsAutoPlacingVisuals] = useState<boolean>(false);
 
   // Cross-Chapter Cohesion & Editorial Memory State
   const [continuityMemory, setContinuityMemory] = useState<{
@@ -2570,6 +2626,99 @@ export default function App() {
     }));
     setHistoryNotice("Scene illustration inserted into chapter manuscript!");
     setTimeout(() => setHistoryNotice(null), 3500);
+  };
+
+  const handleBatchGenerateVisuals = async (chapterId: string) => {
+    const targetChapter = chapters.find(c => c.id === chapterId);
+    if (!targetChapter) return;
+    const placeholders = detectManuscriptVisualPlaceholders(targetChapter.content);
+    if (placeholders.length === 0) {
+      alert("No visual placeholders detected in this chapter.");
+      return;
+    }
+
+    setIsBatchGeneratingVisuals(true);
+    try {
+      let currentContent = targetChapter.content;
+      const isGuides = category === 'guides' || category === 'white_paper';
+      const newIllustrations: ChapterIllustration[] = [];
+
+      for (let i = 0; i < placeholders.length; i++) {
+        const ph = placeholders[i];
+        setHistoryNotice(`Generating visual ${i + 1} of ${placeholders.length}: "${ph.description.slice(0, 30)}..."`);
+        const b64 = await generateSceneIllustrationWithNanoBanana({
+          scenePrompt: ph.description || 'Technical Diagram',
+          chapterTitle: targetChapter.title,
+          colorMode: 'color',
+          artStyle: isGuides ? 'Modern Tech & SaaS Vector' : 'Digital Illustration',
+          aspectRatio: isGuides ? '16:9' : '4:3',
+          bookCategory: category,
+          apiKey: customApiKey
+        });
+
+        if (b64) {
+          const newId = 'illus_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
+          const newIll: ChapterIllustration = {
+            id: newId,
+            chapterId: targetChapter.id,
+            sceneTitle: ph.description.slice(0, 50),
+            prompt: ph.description,
+            imageUrl: b64,
+            colorMode: 'color',
+            artStyle: isGuides ? 'Modern Tech & SaaS Vector' : 'Digital Illustration',
+            aspectRatio: isGuides ? '16:9' : '4:3',
+            characterNamesUsed: [],
+            createdAt: Date.now(),
+            insertedInMarkdown: true
+          };
+          newIllustrations.push(newIll);
+
+          currentContent = currentContent.replace(ph.rawMatch, `![${ph.description}](asset:${newId})`);
+        }
+      }
+
+      if (newIllustrations.length > 0) {
+        setChapterIllustrations(prev => [...newIllustrations, ...prev]);
+        setChapters(prev => prev.map(c => c.id === chapterId ? { ...c, content: currentContent } : c));
+        pushHistorySnapshot(`Auto-generated and placed ${newIllustrations.length} visuals in chapter`);
+        setHistoryNotice(`Successfully generated and placed ${newIllustrations.length} visuals!`);
+      }
+    } catch (err: any) {
+      console.error(err);
+      alert("Failed to batch generate visuals: " + (err.message || "Unknown error"));
+    } finally {
+      setIsBatchGeneratingVisuals(false);
+      setTimeout(() => setHistoryNotice(null), 3500);
+    }
+  };
+
+  const handleAutoPlaceVisuals = async (chapterId: string) => {
+    const targetChapter = chapters.find(c => c.id === chapterId);
+    if (!targetChapter) return;
+
+    setIsAutoPlacingVisuals(true);
+    setHistoryNotice("AI analyzing chapter to identify optimal visual placements...");
+    try {
+      const result = await autoSuggestChapterVisualPlaceholders(
+        targetChapter.content,
+        targetChapter.title,
+        category,
+        customApiKey
+      );
+      if (result.newPlaceholdersCount > 0) {
+        setChapters(prev => prev.map(c => c.id === chapterId ? { ...c, content: result.updatedContent } : c));
+        pushHistorySnapshot(`AI placed ${result.newPlaceholdersCount} visual placeholders in chapter`);
+        setHistoryNotice(`AI identified and placed ${result.newPlaceholdersCount} visual moments! Click "Auto-Generate All" to render them.`);
+      } else {
+        alert("AI analyzed the manuscript but did not find clear anchor points to place visuals, or the chapter text is very short.");
+      }
+    } catch (err: any) {
+      console.error(err);
+      alert("Failed to auto-suggest visuals: " + (err.message || "Unknown error"));
+    } finally {
+      setIsAutoPlacingVisuals(false);
+      setTimeout(() => setHistoryNotice(null), 4500);
+    }
   };
 
   const handleExportDocx = async () => {
@@ -4530,63 +4679,358 @@ export default function App() {
       return <hr className="my-8 border-zinc-200 dark:border-zinc-800" />;
     },
     img: ({ node, ...props }: any) => {
-      const altId = props.alt || props.src || Math.random().toString();
-      
-      // Inline component to use state safely for each image instance.
-      const ImageRenderer = () => {
-        const storedImage = imageBag[altId] || (props.src && props.src.startsWith('data:') ? props.src : null);
-        const [isGeneratingImg, setIsGeneratingImg] = useState(false);
+      const src = props.src || '';
+      const alt = props.alt || 'Visual Illustration';
+      const altId = alt || src || Math.random().toString();
 
-        const handleGenerateAI = async () => {
-          setIsGeneratingImg(true);
+      const ImageRenderer = () => {
+        const isAsset = src.startsWith('asset:');
+        const assetId = isAsset ? src.replace('asset:', '').trim() : '';
+        const isPlaceholder = src.startsWith('placeholder:') || src === 'placeholder' || src === '';
+
+        const illustration = isAsset ? chapterIllustrations.find(i => i.id === assetId) : undefined;
+        const storedImage = illustration?.imageUrl || imageBag[altId] || (src.startsWith('data:') || src.startsWith('http') ? src : null);
+
+        const [isGenerating, setIsGenerating] = useState(false);
+        const [isEditingPrompt, setIsEditingPrompt] = useState(false);
+        const [refineText, setRefineText] = useState(illustration?.prompt || alt || '');
+        const fileInputRef = useRef<HTMLInputElement>(null);
+
+        // Action: Generate or Re-generate with Nano Banana
+        const handleGenerateOrRegenerate = async (customPrompt?: string) => {
+          setIsGenerating(true);
           try {
-            const b64 = await generateInlineImage(`A clean, high quality editorial image or illustrative graphic for: ${props.alt}`, customApiKey);
+            const promptToUse = customPrompt || refineText || alt || 'Technical Architecture Blueprint';
+            const activeChap = chapters.find(c => c.id === activeChapterId);
+            const isGuides = category === 'guides' || category === 'white_paper';
+
+            const b64 = await generateSceneIllustrationWithNanoBanana({
+              scenePrompt: promptToUse,
+              chapterTitle: activeChap?.title || 'Chapter',
+              colorMode: illustration?.colorMode || 'color',
+              artStyle: illustration?.artStyle || (isGuides ? 'Modern Tech & SaaS Vector' : 'Digital Illustration'),
+              aspectRatio: (illustration?.aspectRatio as any) || (isGuides ? '16:9' : '4:3'),
+              bookCategory: category,
+              apiKey: customApiKey
+            });
+
             if (b64) {
-              setImageBag((prev: any) => ({ ...prev, [altId]: b64 }));
+              if (isAsset && illustration) {
+                // Update existing illustration in-place
+                const updated = chapterIllustrations.map(i => i.id === assetId ? { ...i, imageUrl: b64, prompt: promptToUse } : i);
+                setChapterIllustrations(updated);
+                setIsEditingPrompt(false);
+                pushHistorySnapshot('Regenerated manuscript visual');
+              } else {
+                // Create new illustration and replace placeholder in markdown
+                const newId = 'illus_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
+                const newIll: ChapterIllustration = {
+                  id: newId,
+                  chapterId: activeChapterId || 'chapter',
+                  sceneTitle: (alt || 'Manuscript Visual').slice(0, 50),
+                  prompt: promptToUse,
+                  imageUrl: b64,
+                  colorMode: 'color',
+                  artStyle: isGuides ? 'Modern Tech & SaaS Vector' : 'Digital Illustration',
+                  aspectRatio: isGuides ? '16:9' : '4:3',
+                  characterNamesUsed: [],
+                  createdAt: Date.now(),
+                  insertedInMarkdown: true
+                };
+                setChapterIllustrations(prev => [newIll, ...prev]);
+
+                if (activeChapterId) {
+                  setChapters(prev => prev.map(c => {
+                    if (c.id !== activeChapterId) return c;
+                    const escapedSrc = src.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                    const pattern = new RegExp(`!\\[[^\\]]*\\]\\(${escapedSrc}\\)`, 'g');
+                    let newContent = c.content.replace(pattern, `![${alt}](asset:${newId})`);
+                    if (newContent === c.content) {
+                      const escapedAlt = alt.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                      const altPattern = new RegExp(`!\\[${escapedAlt}\\]\\([^\\)]*\\)`, 'g');
+                      newContent = c.content.replace(altPattern, `![${alt}](asset:${newId})`);
+                    }
+                    return { ...c, content: newContent };
+                  }));
+                }
+                pushHistorySnapshot('Generated indicated visual for manuscript');
+              }
             } else {
-              alert("Image generation failed. AI returned empty data.");
+              alert('Image generation returned empty data.');
             }
-          } catch (e: any) {
-            console.error(e);
-            alert("Failed to generate image: " + (e.message || "Unknown error"));
+          } catch (err: any) {
+            console.error(err);
+            alert('Failed to generate visual: ' + (err.message || 'Unknown error'));
           } finally {
-            setIsGeneratingImg(false);
+            setIsGenerating(false);
           }
         };
 
-        if (!storedImage && (!props.src || props.src === '')) {
+        // Action: Upload custom replacement
+        const handleCustomUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+          const file = e.target.files?.[0];
+          if (!file) return;
+          const reader = new FileReader();
+          reader.onload = (event) => {
+            const dataUrl = event.target?.result as string;
+            if (isAsset && illustration) {
+              const updated = chapterIllustrations.map(i => i.id === assetId ? { ...i, imageUrl: dataUrl } : i);
+              setChapterIllustrations(updated);
+            } else {
+              const newId = 'illus_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
+              const newIll: ChapterIllustration = {
+                id: newId,
+                chapterId: activeChapterId || 'chapter',
+                sceneTitle: (alt || 'Custom Visual').slice(0, 50),
+                prompt: alt,
+                imageUrl: dataUrl,
+                colorMode: 'color',
+                artStyle: 'Custom Upload',
+                aspectRatio: '16:9',
+                characterNamesUsed: [],
+                createdAt: Date.now(),
+                insertedInMarkdown: true
+              };
+              setChapterIllustrations(prev => [newIll, ...prev]);
+              if (activeChapterId) {
+                setChapters(prev => prev.map(c => {
+                  if (c.id !== activeChapterId) return c;
+                  const escapedSrc = src.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                  const pattern = new RegExp(`!\\[[^\\]]*\\]\\(${escapedSrc}\\)`, 'g');
+                  let newContent = c.content.replace(pattern, `![${alt}](asset:${newId})`);
+                  if (newContent === c.content) {
+                    const escapedAlt = alt.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                    const altPattern = new RegExp(`!\\[${escapedAlt}\\]\\([^\\)]*\\)`, 'g');
+                    newContent = c.content.replace(altPattern, `![${alt}](asset:${newId})`);
+                  }
+                  return { ...c, content: newContent };
+                }));
+              }
+            }
+            pushHistorySnapshot('Uploaded custom visual into manuscript');
+          };
+          reader.readAsDataURL(file);
+        };
+
+        // Action: Delete from manuscript
+        const handleDeleteFromManuscript = () => {
+          if (!confirm(`Delete this visual from the manuscript?\n\n"${alt}"`)) return;
+          if (activeChapterId) {
+            setChapters(prev => prev.map(c => {
+              if (c.id !== activeChapterId) return c;
+              const escapedSrc = src.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+              const pattern = new RegExp(`\\n*!\\[[^\\]]*\\]\\(${escapedSrc}\\)\\n*`, 'g');
+              let newContent = c.content.replace(pattern, '\n\n');
+              if (newContent === c.content) {
+                const escapedAlt = alt.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                const altPattern = new RegExp(`\\n*!\\[${escapedAlt}\\]\\([^\\)]*\\)\\n*`, 'g');
+                newContent = c.content.replace(altPattern, '\n\n');
+              }
+              return { ...c, content: newContent.trim() };
+            }));
+          }
+          if (isAsset && assetId) {
+            setChapterIllustrations(prev => prev.filter(i => i.id !== assetId));
+          }
+          pushHistorySnapshot('Deleted visual from manuscript');
+        };
+
+        // Action: Download high-res PNG
+        const handleDownloadPng = () => {
+          if (!storedImage) return;
+          const a = document.createElement('a');
+          a.href = storedImage;
+          a.download = `${(alt || 'manuscript_visual').slice(0, 35).replace(/[^a-zA-Z0-9_-]/g, '_')}.png`;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+        };
+
+        // CASE 1: Unrendered Placeholder
+        if (!storedImage && isPlaceholder) {
           return (
-            <div className="my-6 border-2 border-dashed border-zinc-300 rounded-xl max-w-2xl mx-auto p-6 flex flex-col items-center justify-center text-center bg-zinc-50 relative overflow-hidden transition-colors">
-              <UploadCloud className="w-8 h-8 text-indigo-400 mb-3" />
-              <h4 className="text-sm font-semibold text-zinc-700">Add Image / Screenshot</h4>
-              <p className="text-xs text-zinc-500 mt-1 max-w-sm mb-5">
-                The AI wanted to insert an image here: <br/><strong className="text-zinc-700">{props.alt || "Image Placeholder"}</strong>
-              </p>
-              
-              <div className="flex flex-wrap justify-center gap-3 relative z-20">
-                  <label className="cursor-pointer bg-white border border-zinc-200 text-zinc-700 text-xs font-medium px-4 py-2 rounded-lg hover:bg-zinc-50 transition-colors">
-                    Upload Custom
-                    <input 
-                      type="file" 
-                      accept="image/*" 
-                      onChange={(e) => handleImageUpload(altId, e)}
-                      className="hidden" 
-                    />
-                  </label>
-                  <button 
-                    onClick={handleGenerateAI}
-                    disabled={isGeneratingImg}
-                    className="bg-indigo-600 text-white text-xs font-medium px-4 py-2 rounded-lg hover:bg-indigo-700 transition-colors flex items-center gap-2 disabled:opacity-50"
-                   >
-                    {isGeneratingImg ? <Loader2 className="w-3 h-3 animate-spin"/> : <ImageIcon className="w-3 h-3" />}
-                    {isGeneratingImg ? "Consulting Art Director..." : "Agent: Generate Image"}
-                  </button>
+            <div className="my-6 border-2 border-dashed border-amber-300/80 bg-gradient-to-r from-amber-50/80 via-orange-50/50 to-indigo-50/50 rounded-2xl p-5 sm:p-6 text-center relative overflow-hidden transition-all shadow-xs">
+              <div className="max-w-md mx-auto space-y-2">
+                <div className="w-10 h-10 mx-auto rounded-xl bg-amber-500 text-white flex items-center justify-center shadow-xs">
+                  <Sparkles className="w-5 h-5" />
+                </div>
+                <h4 className="text-xs font-bold text-zinc-900 uppercase tracking-wider">
+                  Indicated Visual Placeholder
+                </h4>
+                <p className="text-xs text-zinc-800 font-semibold">
+                  "{alt || 'Visual Diagram / Concept'}"
+                </p>
+                <p className="text-[11px] text-zinc-500">
+                  The manuscript indicates an illustrative graphic at this location.
+                </p>
               </div>
+
+              <div className="mt-4 flex flex-wrap items-center justify-center gap-2.5">
+                <button
+                  type="button"
+                  disabled={isGenerating}
+                  onClick={() => handleGenerateOrRegenerate()}
+                  className="px-4 py-2 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white text-xs font-bold rounded-xl shadow-xs flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                >
+                  {isGenerating ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5 text-yellow-200" />}
+                  <span>{isGenerating ? 'Generating Visual...' : '✨ Generate Visual (Nano Banana)'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="px-3.5 py-2 bg-white border border-zinc-300 hover:bg-zinc-50 text-zinc-700 text-xs font-semibold rounded-xl shadow-2xs flex items-center gap-1.5 cursor-pointer"
+                >
+                  <UploadCloud className="w-3.5 h-3.5 text-indigo-600" />
+                  <span>Upload Image</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleDeleteFromManuscript}
+                  className="px-3 py-2 text-zinc-400 hover:text-red-600 text-xs font-medium cursor-pointer"
+                  title="Remove this placeholder marker"
+                >
+                  Dismiss
+                </button>
+              </div>
+
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                onChange={handleCustomUpload}
+                className="hidden"
+              />
             </div>
           );
         }
 
-        return <img src={storedImage || props.src} alt={props.alt} className="rounded-xl shadow-sm border border-zinc-200 my-6 max-w-full h-auto" />;
+        // CASE 2: Rendered Visual (Asset, Base64, or Stored Image)
+        return (
+          <div className="my-8 rounded-2xl border border-zinc-200/90 bg-zinc-900/5 p-2 sm:p-3 relative group transition-all hover:shadow-md">
+            <div className="relative rounded-xl overflow-hidden bg-zinc-950 flex items-center justify-center border border-zinc-200">
+              <img
+                src={storedImage || src}
+                alt={alt}
+                className="w-full max-h-[520px] object-contain transition-transform hover:scale-[1.01]"
+              />
+
+              {/* Floating Quick Action Overlay */}
+              <div className="absolute top-3 right-3 flex items-center gap-1.5 bg-zinc-900/85 backdrop-blur-md px-2 py-1.5 rounded-xl border border-white/20 shadow-lg opacity-90 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
+                <button
+                  type="button"
+                  onClick={() => setIsEditingPrompt(!isEditingPrompt)}
+                  className="p-1.5 rounded-lg text-white hover:bg-white/20 transition-colors text-xs flex items-center gap-1 cursor-pointer"
+                  title="Refine Prompt / Regenerate"
+                >
+                  <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+                  <span className="text-[11px] font-medium hidden sm:inline">Refine</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="p-1.5 rounded-lg text-white hover:bg-white/20 transition-colors text-xs flex items-center gap-1 cursor-pointer"
+                  title="Upload Custom Image to Replace"
+                >
+                  <UploadCloud className="w-3.5 h-3.5 text-indigo-300" />
+                  <span className="text-[11px] font-medium hidden sm:inline">Replace</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDownloadPng}
+                  className="p-1.5 rounded-lg text-white hover:bg-white/20 transition-colors text-xs cursor-pointer"
+                  title="Download High-Res PNG"
+                >
+                  <Download className="w-3.5 h-3.5 text-emerald-300" />
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDeleteFromManuscript}
+                  className="p-1.5 rounded-lg text-white hover:bg-red-500/80 transition-colors text-xs cursor-pointer"
+                  title="Delete Image from Manuscript"
+                >
+                  <Trash2 className="w-3.5 h-3.5 text-red-300" />
+                </button>
+              </div>
+            </div>
+
+            {/* Hidden file input for Replace */}
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              onChange={handleCustomUpload}
+              className="hidden"
+            />
+
+            {/* Caption & Metadata Bar */}
+            <div className="mt-2.5 px-2 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+              <div className="flex items-center gap-2">
+                <span className="px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-700 font-bold text-[10px] uppercase tracking-wider border border-indigo-200">
+                  {category === 'guides' ? 'Technical Diagram' : 'Manuscript Visual'}
+                </span>
+                <p className="text-zinc-700 font-medium italic truncate max-w-lg">
+                  {alt}
+                </p>
+              </div>
+              <div className="flex items-center gap-2 text-[11px] text-zinc-400">
+                <button
+                  type="button"
+                  onClick={() => setIsEditingPrompt(!isEditingPrompt)}
+                  className="text-indigo-600 hover:text-indigo-800 font-semibold underline cursor-pointer"
+                >
+                  {isEditingPrompt ? 'Close Controls' : 'Edit / Refine'}
+                </button>
+                <span>•</span>
+                <button
+                  type="button"
+                  onClick={handleDeleteFromManuscript}
+                  className="text-red-500 hover:text-red-700 font-semibold underline cursor-pointer"
+                >
+                  Delete
+                </button>
+              </div>
+            </div>
+
+            {/* Inline Refine / Regenerate Drawer */}
+            {isEditingPrompt && (
+              <div className="mt-3 p-3.5 bg-white border border-amber-200 rounded-xl shadow-xs space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-zinc-800 flex items-center gap-1.5">
+                    <Sparkles className="w-3.5 h-3.5 text-amber-500" /> Refine Visual Prompt (Nano Banana)
+                  </span>
+                  <span className="text-[10px] text-zinc-400">Category: {category}</span>
+                </div>
+                <textarea
+                  rows={2}
+                  value={refineText}
+                  onChange={(e) => setRefineText(e.target.value)}
+                  placeholder="Refine visual details, composition, lighting, or specific UI elements..."
+                  className="w-full text-xs p-2.5 border border-zinc-200 rounded-lg bg-zinc-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-500 font-sans"
+                />
+                <div className="flex items-center justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsEditingPrompt(false)}
+                    className="px-3 py-1.5 text-xs text-zinc-600 hover:text-zinc-800 font-medium cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    disabled={isGenerating}
+                    onClick={() => handleGenerateOrRegenerate(refineText)}
+                    className="px-4 py-1.5 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white text-xs font-bold rounded-lg shadow-xs flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                  >
+                    {isGenerating ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
+                    <span>{isGenerating ? 'Re-rendering Visual...' : 'Re-generate Visual'}</span>
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        );
       };
 
       return <ImageRenderer />;
@@ -6308,6 +6752,10 @@ export default function App() {
                       onDelete={() => setChapterToDelete(chapter)}
                       onUndo={handleUndo}
                       canUndo={historyIndex > 0}
+                      onAutoPlaceVisuals={() => handleAutoPlaceVisuals(chapter.id)}
+                      onBatchGenerateVisuals={() => handleBatchGenerateVisuals(chapter.id)}
+                      isAutoPlacingVisuals={isAutoPlacingVisuals}
+                      isBatchGeneratingVisuals={isBatchGeneratingVisuals}
                     />
                   );
                 })()}
