@@ -320,8 +320,40 @@ export const saveProject = async (project: ProjectSave) => {
       category: project.category,
       idea: project.idea
     });
-  } catch (e) {
+  } catch (e: any) {
     console.warn("LocalStorage save failed:", e);
+    // If quota exceeded due to heavy base64 illustrations or covers, save lightweight version
+    // without heavy image payloads so written chapter text & outlines are never lost!
+    if (e?.name === 'QuotaExceededError' || e?.code === 22 || e?.number === -2147024882 || String(e).toLowerCase().includes('quota')) {
+      try {
+        const lightweight: ProjectSave = {
+          ...project,
+          chapterIllustrations: Array.isArray(project.chapterIllustrations)
+            ? project.chapterIllustrations.map((ill: any) => ({
+                ...ill,
+                imageUrl: ill.imageUrl && ill.imageUrl.length > 50000 ? '' : ill.imageUrl
+              }))
+            : project.chapterIllustrations,
+          assets: project.assets
+            ? {
+                ...project.assets,
+                coverUrl: project.assets?.coverUrl && project.assets.coverUrl.length > 50000 ? '' : project.assets?.coverUrl
+              }
+            : project.assets
+        };
+        localStorage.setItem(`kdp_project_${project.id}`, JSON.stringify(lightweight));
+        updateLocalStorageIndex({
+          id: project.id,
+          title: project.title,
+          updatedAt: project.updatedAt || Date.now(),
+          category: project.category,
+          idea: project.idea
+        });
+        console.info("Saved lightweight project to LocalStorage to preserve manuscript text under quota pressure.");
+      } catch (inner) {
+        console.error("Critical: LocalStorage completely full, unable to save even lightweight version:", inner);
+      }
+    }
   }
 
   if (isFirestoreQuotaExceeded || !auth.currentUser) return;

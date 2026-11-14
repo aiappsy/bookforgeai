@@ -51,7 +51,7 @@ interface VisualDesignerStudioProps {
   chapterIllustrations: ChapterIllustration[];
   onUpdateCharacterBible: (characters: CharacterProfile[]) => void;
   onUpdateIllustrations: (illustrations: ChapterIllustration[]) => void;
-  onInsertIllustrationIntoChapter: (chapterId: string, markdownSnippet: string) => void;
+  onInsertIllustrationIntoChapter: (chapterId: string, markdownSnippet: string, position?: 'top' | 'bottom') => void;
   onNavigateToChapter?: (chapterId: string) => void;
 }
 

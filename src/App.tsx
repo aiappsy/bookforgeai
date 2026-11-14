@@ -4650,7 +4650,7 @@ export default function App() {
     reader.readAsDataURL(file);
   };
 
-  const MarkdownComponents = {
+  const MarkdownComponents = useMemo(() => ({
     code({ node, inline, className, children, ...props }: any) {
       if (inline) {
         return (
@@ -4701,8 +4701,7 @@ export default function App() {
       const alt = props.alt || 'Visual Illustration';
       const altId = alt || src || Math.random().toString();
 
-      const ImageRenderer = () => {
-        const isAsset = src.startsWith('asset:');
+      const isAsset = src.startsWith('asset:');
         const assetId = isAsset ? src.replace('asset:', '').trim() : '';
         const isPlaceholder = src.startsWith('placeholder:') || src === 'placeholder' || src === '';
 
@@ -5095,11 +5094,8 @@ export default function App() {
             )}
           </div>
         );
-      };
-
-      return <ImageRenderer />;
     }
-  };
+  }), [chapterIllustrations, imageBag, activeChapterId, chapters, category, customApiKey, pushHistorySnapshot]);
 
   if (standalonePublishedPage) {
     const pBook = standalonePublishedPage.bookDetails || {};

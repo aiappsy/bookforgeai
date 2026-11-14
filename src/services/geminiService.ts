@@ -1103,8 +1103,8 @@ CRITICAL MANDATORY RULES FOR ALL EDITS:
 10. CODE BOXES & VISUAL DIAGRAM FORMATTING:
    - FORMAT DATA GRIDS AS CLEAN MARKDOWN TABLES (| Col 1 | Col 2 |).
    - ENCLOSE QUOTES & KEY INSIGHTS IN BLOCKQUOTES (> ...).
-   - NEVER create dark terminal code blocks (```bash ... ``` or ```text ... ```) unless the user explicitly requests code or shell commands.
-   - BOX & CODE BLOCK REMOVAL: If the user asks to "remove boxes", "remove code blocks", "delete the boxes", "strip code blocks", or "unwrap boxes", you MUST strip all ``` code block fences, unwrapping the text into clean, flowing Markdown paragraphs, blockquotes (> ...), or tables.
+   - NEVER create dark terminal code blocks (\`\`\`bash ... \`\`\` or \`\`\`text ... \`\`\`) unless the user explicitly requests code or shell commands.
+   - BOX & CODE BLOCK REMOVAL: If the user asks to "remove boxes", "remove code blocks", "delete the boxes", "strip code blocks", or "unwrap boxes", you MUST strip all \`\`\` code block fences, unwrapping the text into clean, flowing Markdown paragraphs, blockquotes (> ...), or tables.
    - MANDATORY TOOL INVOCATION: When asked to edit, remove boxes, rewrite, or polish, you MUST invoke 'updateChapter' or 'updateMultipleChapters' to write the revised text back into the manuscript!`;
 
   const artDirectorInstruction = `You are an elite Art Director and Visual Concept Designer.
