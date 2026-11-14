@@ -6,7 +6,7 @@ service cloud.firestore {
     }
 
     function isAuthenticated() {
-      return request.auth != null && request.auth.token.email_verified == true;
+      return request.auth != null;
     }
 
     function isValidId(id) {
