@@ -5,6 +5,8 @@ import Markdown from 'react-markdown';
 import {
   researchNiche,
   generateOutline,
+  translateOutline,
+  detectLanguageFromText,
   extractChapters,
   generateChapter,
   sendChatMessage,
@@ -2313,8 +2315,15 @@ export default function App() {
         }));
       }
       
+      const detectedLang = detectLanguageFromText(idea);
+      let targetLanguage = bookDetails.language;
+      if (detectedLang && (!targetLanguage || targetLanguage === 'English')) {
+        targetLanguage = detectedLang;
+        setBookDetails(prev => ({ ...prev, language: detectedLang }));
+      }
+
       setGeneratingStep('Generating architectural outline...');
-      const languagePrompt = bookDetails.language ? `\n\nCRITICAL: You MUST write the entire outline in ${bookDetails.language}. All titles and section bullet points MUST be in ${bookDetails.language}.` : '';
+      const languagePrompt = targetLanguage ? `\n\nCRITICAL: You MUST write the entire outline in ${targetLanguage}. All titles and section bullet points MUST be in ${targetLanguage}.` : '';
       const globalInstructionsPrompt = bookDetails?.globalInstructions ? `\n\nADDITIONAL MANDATORY INSTRUCTIONS:\n${bookDetails.globalInstructions}` : '';
       const effectiveSubCategory = bookDetails?.subCategory || (BOOK_SUBCATEGORIES[category] ? BOOK_SUBCATEGORIES[category][0]?.id : undefined);
       const out = await generateOutline(fullIdea, res.top_keywords || [], customApiKey, customPrompt + languagePrompt + globalInstructionsPrompt, category, effectiveSubCategory);
@@ -2324,6 +2333,23 @@ export default function App() {
       setViewMode('outline');
     } catch (e: any) {
       handleApiError(e, "Failed to start project");
+    } finally {
+      setIsGenerating(false);
+      setGeneratingStep('');
+    }
+  };
+
+  const handleTranslateOutline = async (targetLang: string = 'Norwegian') => {
+    if (!outline || !outline.trim()) return;
+    setIsGenerating(true);
+    setGeneratingStep(`Oversetter disposisjon til ${targetLang === 'Norwegian' ? 'norsk' : targetLang}...`);
+    try {
+      pushHistorySnapshot(`Før oversettelse til ${targetLang}`);
+      const translated = await translateOutline(outline, targetLang, customApiKey);
+      setOutline(translated);
+      setBookDetails(prev => ({ ...prev, language: targetLang }));
+    } catch (e: any) {
+      handleApiError(e, "Kunne ikke oversette disposisjonen");
     } finally {
       setIsGenerating(false);
       setGeneratingStep('');
@@ -4378,6 +4404,13 @@ export default function App() {
     setIsChatting(true);
 
     try {
+      const detectedMsgLang = detectLanguageFromText(sendingInput);
+      let targetChatLang = bookDetails?.language || 'English';
+      if (detectedMsgLang === 'Norwegian' || sendingInput.toLowerCase().includes('norsk') || sendingInput.toLowerCase().includes('norwegian')) {
+        targetChatLang = 'Norwegian';
+        setBookDetails(prev => ({ ...prev, language: 'Norwegian' }));
+      }
+
       const { replyText, revisedContent, updatedOutline, updatedChapters } = await sendChatMessage(
         sendingInput,
         sendingHistory,
@@ -4386,7 +4419,7 @@ export default function App() {
         customApiKey,
         chatAgent,
         sendingAttachments,
-        bookDetails?.language || 'English',
+        targetChatLang,
         chapters.map(c => ({ id: c.id, title: c.title, content: c.content })),
         outline,
         activeChapterId
@@ -6255,9 +6288,22 @@ export default function App() {
                           : 'e.g., A comprehensive non-fiction publication exploring cognitive behavioral frameworks for peak performance...'
                       }
                       value={idea}
-                      onChange={(e) => setIdea(e.target.value)}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setIdea(val);
+                        const detected = detectLanguageFromText(val);
+                        if (detected && (bookDetails.language === 'English' || !bookDetails.language)) {
+                          setBookDetails(prev => ({ ...prev, language: detected }));
+                        }
+                      }}
                       disabled={isGenerating}
                     />
+                    {bookDetails.language === 'Norwegian' && (
+                      <div className="flex items-center gap-2 -mt-4 mb-6 text-xs text-emerald-800 bg-emerald-50 border border-emerald-200 px-3.5 py-2 rounded-xl font-medium">
+                        <span>🇳🇴</span>
+                        <span>Språk er automatisk oppdaget og satt til <strong>Norsk</strong>. Disposisjon og kapitler genereres på norsk.</span>
+                      </div>
+                    )}
                     
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div>
@@ -6692,18 +6738,40 @@ export default function App() {
 
             {viewMode === 'outline' && (
               <div className="space-y-6">
-                <div className="flex justify-between items-center">
-                  <p className="text-sm text-zinc-500">Review and edit your outline. Chat with the AI on the right to make changes.</p>
-                  {chapters.length === 0 ? (
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                  <div>
+                    <p className="text-sm text-zinc-500">Review and edit your outline. Chat with the AI on the right to make changes.</p>
+                    <div className="flex items-center gap-2 mt-1.5">
+                      <span className="text-xs text-zinc-400">Språk:</span>
+                      <span className="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200">
+                        {bookDetails.language === 'Norwegian' ? '🇳🇴 Norsk' : bookDetails.language || 'English'}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2.5 flex-wrap">
                     <button
-                      onClick={handleExtractChapters}
+                      onClick={() => handleTranslateOutline('Norwegian')}
                       disabled={isGenerating}
-                      className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
+                      className="flex items-center gap-2 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 px-3.5 py-2 rounded-lg text-sm font-semibold transition-colors disabled:opacity-50 shadow-xs cursor-pointer"
+                      title="Oversett og tilpass disposisjonen til naturlig norsk"
                     >
-                      {isGenerating ? <Loader2 className="w-4 h-4 animate-spin" /> : <List className="w-4 h-4" />}
-                      Extract Chapters & Start Writing
+                      {isGenerating && generatingStep.toLowerCase().includes('norsk') ? (
+                        <Loader2 className="w-4 h-4 animate-spin text-amber-700" />
+                      ) : (
+                        <span>🇳🇴</span>
+                      )}
+                      Oversett disposisjon til norsk
                     </button>
-                  ) : chapters.some(c => c.status === 'idle') ? (
+                    {chapters.length === 0 ? (
+                      <button
+                        onClick={handleExtractChapters}
+                        disabled={isGenerating}
+                        className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors disabled:opacity-50 cursor-pointer shadow-xs"
+                      >
+                        {isGenerating && !generatingStep.toLowerCase().includes('norsk') ? <Loader2 className="w-4 h-4 animate-spin" /> : <List className="w-4 h-4" />}
+                        Extract Chapters & Start Writing
+                      </button>
+                    ) : chapters.some(c => c.status === 'idle') ? (
                     <button
                       onClick={() => handleGenerateAllChapters(false)}
                       disabled={isGenerating}
@@ -6713,6 +6781,7 @@ export default function App() {
                       Generate {chapters.filter(c => c.status === 'idle').length} Unwritten Chapters
                     </button>
                   ) : null}
+                  </div>
                 </div>
                 <div className="bg-white p-4 sm:p-8 rounded-2xl border border-zinc-200 shadow-sm prose prose-zinc max-w-none prose-sm sm:prose-base">
                   <Markdown components={MarkdownComponents}>{outline}</Markdown>

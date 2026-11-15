@@ -597,6 +597,76 @@ export async function extractChapters(outline: string, apiKey?: string, language
   }
 }
 
+export function detectLanguageFromText(text: string): string | null {
+  if (!text || text.trim().length < 5) return null;
+  const lower = text.toLowerCase();
+
+  // Explicit keyword checks
+  if (lower.includes('norsk') || lower.includes('norwegian')) {
+    return 'Norwegian';
+  }
+
+  // Characteristic Scandinavian letters
+  if (/[æøå]/.test(lower)) {
+    return 'Norwegian';
+  }
+
+  // Common Norwegian words / stop words
+  const norwegianWords = new Set([
+    'jeg', 'meg', 'deg', 'seg', 'min', 'mitt', 'mine', 'din', 'ditt', 'dine',
+    'sin', 'sitt', 'sine', 'vår', 'vårt', 'våre', 'dere', 'deres', 'han', 'hun',
+    'den', 'det', 'de', 'dem', 'og', 'i', 'på', 'for', 'med', 'av', 'til',
+    'fra', 'om', 'under', 'over', 'ved', 'etter', 'hos', 'som', 'at', 'en',
+    'et', 'ei', 'ikke', 'skal', 'vil', 'kan', 'må', 'bør', 'har', 'hadde',
+    'blir', 'ble', 'være', 'er', 'var', 'hvis', 'men', 'eller', 'så', 'da',
+    'hva', 'hvem', 'hvor', 'hvordan', 'hvorfor', 'barn', 'eventyr', 'lykkemynt',
+    'onkel', 'tante', 'mamma', 'pappa', 'bestefar', 'bestemor', 'søster', 'bror'
+  ]);
+
+  const words = lower.match(/[\p{L}]+/gu) || [];
+  let matches = 0;
+  for (const w of words) {
+    if (norwegianWords.has(w)) {
+      matches++;
+    }
+  }
+
+  if (matches >= 2) {
+    return 'Norwegian';
+  }
+
+  return null;
+}
+
+export async function translateOutline(
+  outline: string,
+  targetLanguage: string = 'Norwegian',
+  apiKey?: string
+): Promise<string> {
+  const ai = getAI(apiKey);
+  const prompt = `You are a master literary translator and editor.
+Translate and adapt the following book outline into natural, rich, captivating ${targetLanguage}.
+
+STRICT MANDATORY RULES:
+1. OUTPUT ONLY THE TRANSLATED MARKDOWN OUTLINE. DO NOT include any conversational preamble, introduction, or concluding notes (e.g. NEVER write "Here is the translation...", "Her er oversettelsen...", or similar). Begin directly with the outline markdown (e.g. # Title or ### 1...).
+2. Preserve all character names, relationships, and ages faithfully (e.g., Adam, Signe, Iben, Onkel P).
+3. Retain the exact markdown formatting structure (headers, numbered sections, bullet points, bold text).
+4. If the outline is for children's stories or fairy tales, adapt the tone with warm, lyrical storytelling wonder (in the style of classic Scandinavian fairy tales).
+
+OUTLINE TO TRANSLATE:
+${outline}`;
+
+  const response = await withRetry(() => ai.models.generateContent({
+    model: "gemini-3.5-flash",
+    contents: prompt,
+  }), !!apiKey);
+
+  let text = response.text || outline;
+  // Strip out any accidental preambles if the model produced any
+  text = text.replace(/^(?:Her er|Here is)[^\n]*\n+/i, '').replace(/^```markdown\n?/i, '').replace(/```$/i, '').trim();
+  return text;
+}
+
 export interface LearnedRule {
   id: string;
   rule: string;
@@ -958,15 +1028,21 @@ export async function sendChatMessage(
 ): Promise<ChatMessageResult> {
   const ai = getAI(apiKey);
 
+  let effectiveLanguage = language;
+  const detectedMsgLang = detectLanguageFromText(message);
+  if (detectedMsgLang === 'Norwegian' || message.toLowerCase().includes('norsk') || message.toLowerCase().includes('norwegian')) {
+    effectiveLanguage = 'Norwegian';
+  }
+
   const updateDocTool: FunctionDeclaration = {
     name: "updateDocument",
-    description: `Updates the currently active document (${documentType}) with new or revised content in ${language}. Call this when the user explicitly asks to change or rewrite the current active document.`,
+    description: `Updates the currently active document (${documentType}) with new or revised content in ${effectiveLanguage}. Call this when the user explicitly asks to change or rewrite the current active document.`,
     parameters: {
       type: Type.OBJECT,
       properties: {
         revisedContent: {
           type: Type.STRING,
-          description: `The complete revised content in Markdown format. MUST be written in ${language}.`
+          description: `The complete revised content in Markdown format. MUST be written in ${effectiveLanguage}.`
         },
         explanation: {
           type: Type.STRING,
@@ -979,7 +1055,7 @@ export async function sendChatMessage(
 
   const updateOutlineTool: FunctionDeclaration = {
     name: "updateOutline",
-    description: `Updates the book outline with new or revised content in ${language}. Call this whenever the user asks to update, rewrite, or expand the book outline.`,
+    description: `Updates the book outline with new or revised content in ${effectiveLanguage}. Call this whenever the user asks to update, rewrite, or expand the book outline.`,
     parameters: {
       type: Type.OBJECT,
       properties: {
@@ -998,7 +1074,7 @@ export async function sendChatMessage(
 
   const updateChapterTool: FunctionDeclaration = {
     name: "updateChapter",
-    description: `Updates a single specific chapter's content in ${language}. Call this when the user asks to edit, rewrite, expand, or polish a specific chapter.`,
+    description: `Updates a single specific chapter's content in ${effectiveLanguage}. Call this when the user asks to edit, rewrite, expand, or polish a specific chapter.`,
     parameters: {
       type: Type.OBJECT,
       properties: {
@@ -1025,7 +1101,7 @@ export async function sendChatMessage(
 
   const updateMultipleChaptersTool: FunctionDeclaration = {
     name: "updateMultipleChapters",
-    description: `Updates MULTIPLE or ALL chapters across the manuscript in ${language}. ALWAYS call this when the user asks to 'update all chapters', 'rewrite all chapters', 'polish the whole manuscript', or edit multiple chapters at once.`,
+    description: `Updates MULTIPLE or ALL chapters across the manuscript in ${effectiveLanguage}. ALWAYS call this when the user asks to 'update all chapters', 'rewrite all chapters', 'polish the whole manuscript', or edit multiple chapters at once.`,
     parameters: {
       type: Type.OBJECT,
       properties: {
@@ -1096,7 +1172,7 @@ CRITICAL MANDATORY RULES FOR ALL EDITS:
 4. IF THE USER ASKS TO UPDATE ALL CHAPTERS or MULTIPLE CHAPTERS:
    - YOU MUST CALL 'updateMultipleChapters' and include the FULL REVISED CONTENT for EVERY chapter in the 'chapters' array.
    - Set chapterId to the chapter index (e.g., "1", "2") or its ID/Title.
-5. WRITE ALL REVISED TEXT IN: ${language}.
+5. WRITE ALL REVISED TEXT IN: ${effectiveLanguage}.
 6. Always provide complete, publication-ready Markdown text for all chapter revisions.
 7. In your conversational text response, summarize specifically what changes you made.
 8. MANDATORY CHARACTER NAMING UNIQUNESS & DIVERSITY RULES:
@@ -1122,7 +1198,7 @@ ${currentDocument}
 ---
 
 Your job is to discuss visual styling, brainstorm graphical assets, and insert images.
-CRITICAL: You must communicate and write any document updates in: ${language}.
+CRITICAL: You must communicate and write any document updates in: ${effectiveLanguage}.
 If the user asks you to insert an image, DO NOT refuse! Instead, use 'updateChapter' or 'updateDocument' to insert standard Markdown image syntax (![A descriptive prompt detailing the image contents]()) directly into the document.
 ALWAYS USE THIS EXACT MARKDOWN FORMAT: ![Detailed prompt describing the visual]()`;
 
