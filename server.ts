@@ -131,7 +131,7 @@ Current User Context: User Email: ${userContext?.email || 'Guest'}, Plan: ${user
       }
 
       const response = await ai.models.generateContent({
-        model: "gemini-3.7-flash",
+        model: "gemini-3.5-flash",
         contents: formattedContents,
         config: {
           systemInstruction,

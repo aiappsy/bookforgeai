@@ -51,7 +51,7 @@ export async function testGeminiApiKey(apiKey: string): Promise<{ success: boole
       httpOptions: { baseUrl: getGeminiBaseUrl() }
     });
     const response = await ai.models.generateContent({
-      model: "gemini-3.7-flash",
+      model: "gemini-3.5-flash",
       contents: [{ role: "user", parts: [{ text: "Hello! Confirm status in 5 words." }] }]
     });
     if (response.text) {
@@ -180,7 +180,7 @@ export async function generateBackCover(bookDetails: any, chaptersTitleList: str
   }
 
   const response = await withRetry(() => ai.models.generateContent({
-    model: "gemini-3.7-flash",
+    model: "gemini-3.5-flash",
     contents: [{ role: "user", parts: [{ text: prompt }] }],
   }), !!apiKey);
 
@@ -234,7 +234,7 @@ export interface AmazonNicheOpportunityResult {
 export async function researchNiche(idea: string, apiKey?: string) {
   const ai = getAI(apiKey);
   const response = await withRetry(() => ai.models.generateContent({
-    model: "gemini-3.7-flash",
+    model: "gemini-3.5-flash",
     contents: `Analyze Amazon KDP for niche: '${idea}'. Return a JSON object with: demand_score (0-100), top_keywords (array of strings), recommended_categories (array of strings).`,
     config: {
       responseMimeType: "application/json",
@@ -307,7 +307,7 @@ Return a JSON object conforming strictly to this schema:
 - actionable_verdict: string (3-4 sentence strategic summary on how to win this niche on Amazon KDP)`;
 
   const response = await withRetry(() => ai.models.generateContent({
-    model: "gemini-3.7-flash",
+    model: "gemini-3.5-flash",
     contents: prompt,
     config: {
       responseMimeType: "application/json",
@@ -568,17 +568,17 @@ export async function generateOutline(
   };
 
   try {
-    return await withRetry(() => generate("gemini-3.7-flash"), !!apiKey);
+    return await withRetry(() => generate("gemini-3.5-flash"), !!apiKey);
   } catch (e: any) {
     console.warn("Outline generation retry on gemini-3.7-flash...", e);
-    return await withRetry(() => generate("gemini-3.7-flash"), !!apiKey);
+    return await withRetry(() => generate("gemini-3.5-flash"), !!apiKey);
   }
 }
 
 export async function extractChapters(outline: string, apiKey?: string, language: string = 'English') {
   const ai = getAI(apiKey);
   const response = await withRetry(() => ai.models.generateContent({
-    model: "gemini-3.7-flash",
+    model: "gemini-3.5-flash",
     contents: `Extract a list of chapter titles exactly as they appear in this outline. Return a JSON array of strings. Keep them in ${language}. Outline: ${outline}`,
     config: { 
       responseMimeType: "application/json",
@@ -649,7 +649,7 @@ export async function summarizeChapterForContinuity(
   const ai = getAI(apiKey);
   try {
     const res = await ai.models.generateContent({
-      model: "gemini-3.7-flash",
+      model: "gemini-3.5-flash",
       contents: `Provide a concise 2 to 3 sentence narrative and factual summary of what occurs and is established in Chapter titled "${chapterTitle}". Focus on plot progression, key character developments, core arguments, and current narrative state. Do NOT include introductory filler.
 
 CHAPTER CONTENT:
@@ -690,7 +690,7 @@ Return JSON matching this exact schema:
 If the user feedback is purely a typo fix or non-repeatable change, return an empty array {"rules": []}.`;
 
     const res = await ai.models.generateContent({
-      model: "gemini-3.7-flash",
+      model: "gemini-3.5-flash",
       contents: prompt,
       config: {
         responseMimeType: "application/json",
@@ -920,13 +920,13 @@ export async function generateChapter(
   };
 
   try {
-    return await withRetry(() => generate("gemini-3.7-flash"), !!apiKey);
+    return await withRetry(() => generate("gemini-3.5-flash"), !!apiKey);
   } catch (e: any) {
     if (e.message?.includes('cancelled') || signal?.aborted) {
       throw e;
     }
     console.warn("Flash model 3.7 failed for chapter generation. Retrying with high-velocity gemini-2.5-flash...", e);
-    return await withRetry(() => generate("gemini-2.5-flash"), !!apiKey);
+    return await withRetry(() => generate("gemini-3.5-flash"), !!apiKey);
   }
 }
 
@@ -1155,10 +1155,10 @@ ALWAYS USE THIS EXACT MARKDOWN FORMAT: ![Detailed prompt describing the visual](
 
   let response: any;
   try {
-    response = await withRetry(() => callModel("gemini-3.7-flash"), !!apiKey);
+    response = await withRetry(() => callModel("gemini-3.5-flash"), !!apiKey);
   } catch (e: any) {
     console.warn("Primary chat call failed on gemini-3.7-flash, retrying...", e);
-    response = await withRetry(() => callModel("gemini-3.7-flash"), !!apiKey);
+    response = await withRetry(() => callModel("gemini-3.5-flash"), !!apiKey);
   }
 
   let replyText = response.text || "";
@@ -1304,7 +1304,7 @@ CRITICAL: DO NOT copy or clone any specific existing book cover, copyrighted lay
   }
 
   const response = await withRetry(() => ai.models.generateContent({
-    model: "gemini-3.7-flash",
+    model: "gemini-3.5-flash",
     contents: [{ role: 'user', parts: userParts.map(p => typeof p === 'string' ? { text: p } : p) }],
     config: {
       systemInstruction: directive
@@ -1542,7 +1542,7 @@ COVER DESIGN REQUIREMENTS:
 4. Return ONLY valid XML SVG starting with <svg> and ending with </svg>. No markdown block quotes, no markdown explanation before or after.`;
 
   try {
-    const modelsToTry = ["gemini-3.7-flash", "gemini-3.1-flash-lite"];
+    const modelsToTry = ["gemini-3.5-flash", "gemini-3.1-flash-lite"];
     for (const model of modelsToTry) {
       try {
         const response = await withRetry(() => ai.models.generateContent({
@@ -1674,7 +1674,7 @@ ${context}
 Return a JSON object with a single property "keywords": array of exactly 7 strings.`;
 
     const response = await withRetry(() => ai.models.generateContent({
-      model: "gemini-3.7-flash",
+      model: "gemini-3.5-flash",
       contents: [{ role: "user", parts: [{ text: prompt }] }],
       config: {
         responseMimeType: "application/json",
@@ -1705,7 +1705,7 @@ Return a JSON object with a single property "keywords": array of exactly 7 strin
 export async function optimizeMetadata(idea: string, apiKey?: string, language: string = 'English') {
   const ai = getAI(apiKey);
   const response = await withRetry(() => ai.models.generateContent({
-    model: "gemini-3.7-flash",
+    model: "gemini-3.5-flash",
     contents: `You are an expert Amazon KDP publishing specialist and SEO strategist.
 Analyze the following book details, title, and manuscript context, and generate deeply relevant KDP metadata, keywords, and BISAC categories specifically tailored to THIS EXACT BOOK.
 
@@ -1842,7 +1842,7 @@ Include clear guidelines on:
 Format as a clear, directive prompt starting with: "MATCH THIS COPYWRITING STYLE:" followed by bullet points.`;
 
   const response = await withRetry(() => ai.models.generateContent({
-    model: "gemini-3.7-flash",
+    model: "gemini-3.5-flash",
     contents: [{ role: "user", parts: [{ text: prompt }] }],
   }), !!apiKey);
 
@@ -1876,7 +1876,7 @@ Return a JSON object with:
 - chapters: array of objects with { title: string, content: string }`;
 
   const response = await withRetry(() => ai.models.generateContent({
-    model: "gemini-3.7-flash",
+    model: "gemini-3.5-flash",
     contents: prompt,
     config: {
       responseMimeType: "application/json",
@@ -1995,7 +1995,7 @@ Structure the Press Release strictly with:
 Write in clean, polished Markdown. CRITICAL: Match the requested language (${bookDetails.language || 'English'}).`;
 
   const response = await withRetry(() => ai.models.generateContent({
-    model: "gemini-3.7-flash",
+    model: "gemini-3.5-flash",
     contents: [{ role: "user", parts: [{ text: prompt }] }],
   }), !!apiKey);
 
@@ -2025,7 +2025,7 @@ Include emojis, line breaks for readability, clear Calls to Action (CTAs), and 5
 Format nicely with Markdown headings for each post.`;
 
   const response = await withRetry(() => ai.models.generateContent({
-    model: "gemini-3.7-flash",
+    model: "gemini-3.5-flash",
     contents: [{ role: "user", parts: [{ text: prompt }] }],
   }), !!apiKey);
 
@@ -2054,7 +2054,7 @@ Generate 4 emails with Subject Line, Preview Text, Email Body, and Call To Actio
 Format clearly in Markdown.`;
 
   const response = await withRetry(() => ai.models.generateContent({
-    model: "gemini-3.7-flash",
+    model: "gemini-3.5-flash",
     contents: [{ role: "user", parts: [{ text: prompt }] }],
   }), !!apiKey);
 
@@ -2086,7 +2086,7 @@ Provide:
 Output in clean Markdown format.`;
 
   const response = await withRetry(() => ai.models.generateContent({
-    model: "gemini-3.7-flash",
+    model: "gemini-3.5-flash",
     contents: [{ role: "user", parts: [{ text: prompt }] }],
   }), !!apiKey);
 
@@ -2121,7 +2121,7 @@ Return a JSON object matching this structure:
 }`;
 
   const response = await withRetry(() => ai.models.generateContent({
-    model: "gemini-3.7-flash",
+    model: "gemini-3.5-flash",
     contents: [{ role: "user", parts: [{ text: prompt }] }],
     config: {
       responseMimeType: "application/json",
@@ -2187,7 +2187,7 @@ Provide a structured Markdown guide containing:
 6. **Grassroots Guerrilla Marketing Tactics (Zero Budget)**`;
 
   const response = await withRetry(() => ai.models.generateContent({
-    model: "gemini-3.7-flash",
+    model: "gemini-3.5-flash",
     contents: [{ role: "user", parts: [{ text: prompt }] }],
   }), !!apiKey);
 
@@ -2224,7 +2224,7 @@ export async function generateBetaReaderCritique(
   6. "executiveSummary": A 2-paragraph overall report summarizing strengths and critical fixes before publishing.`;
 
   const response = await withRetry(() => ai.models.generateContent({
-    model: "gemini-3.7-flash",
+    model: "gemini-3.5-flash",
     contents: [{ role: "user", parts: [{ text: prompt }] }],
     config: {
       responseMimeType: "application/json",
@@ -2302,7 +2302,7 @@ INSTRUCTIONS:
 5. Do NOT include meta-conversational text, preface, or commentary before/after the chapter content.`;
 
   const response = await withRetry(() => ai.models.generateContent({
-    model: "gemini-3.7-flash",
+    model: "gemini-3.5-flash",
     contents: [{ role: "user", parts: [{ text: prompt }] }],
   }), !!apiKey);
 
@@ -2398,7 +2398,7 @@ Output a clean, valid JSON object with:
 - "summary_of_changes": string[] (list of 3 to 5 key audio optimizations made, e.g. "Removed 12 redundant dialogue tags", "Converted numerical values to phonetic spoken words", "Restructured 8 complex sentences for oral breathing cadence")`;
 
   const response = await withRetry(() => ai.models.generateContent({
-    model: "gemini-3.7-flash",
+    model: "gemini-3.5-flash",
     contents: [{ role: "user", parts: [{ text: prompt }] }],
     config: {
       thinkingConfig: { thinkingBudget: 1024 },
@@ -2455,7 +2455,7 @@ PERFORM THE FOLLOWING COMPREHENSIVE DIRECTORIAL TASKS:
 8. Output entire result as a clean, valid JSON object matching the requested schema.`;
 
   const response = await withRetry(() => ai.models.generateContent({
-    model: "gemini-3.7-flash",
+    model: "gemini-3.5-flash",
     contents: [{ role: "user", parts: [{ text: prompt }] }],
     config: {
       thinkingConfig: { thinkingBudget: 2048 },
@@ -2583,7 +2583,7 @@ export async function generateAudiobookScript(
   6. **Closing Audio Cue & Chapter Outro**`;
 
   const response = await withRetry(() => ai.models.generateContent({
-    model: "gemini-3.7-flash",
+    model: "gemini-3.5-flash",
     contents: [{ role: "user", parts: [{ text: prompt }] }],
   }), !!apiKey);
 
@@ -2922,11 +2922,11 @@ ${content}
   };
 
   try {
-    const result = await withRetry(() => generate("gemini-3.7-flash"), !!apiKey);
+    const result = await withRetry(() => generate("gemini-3.5-flash"), !!apiKey);
     return sanitizeAiBuzzwords(result);
   } catch (e: any) {
     console.warn("Humanize error on gemini-3.7-flash, retrying...", e);
-    const result = await withRetry(() => generate("gemini-3.7-flash"), !!apiKey);
+    const result = await withRetry(() => generate("gemini-3.5-flash"), !!apiKey);
     return sanitizeAiBuzzwords(result);
   }
 }
@@ -2949,7 +2949,7 @@ PROVIDE A COMPREHENSIVE, HIGHLY DETAILED RESPONSE COVERING:
 4. Actionable Next Steps formatted in clean Markdown.`;
 
   const response = await withRetry(() => ai.models.generateContent({
-    model: "gemini-3.7-flash",
+    model: "gemini-3.5-flash",
     contents: [{ role: "user", parts: [{ text: prompt }] }],
     config: {
       thinkingConfig: { thinkingBudget: 2048 },
@@ -3031,7 +3031,7 @@ Return a JSON array of character profiles.`;
 
   try {
     const response = await withRetry(() => ai.models.generateContent({
-      model: "gemini-3.7-flash",
+      model: "gemini-3.5-flash",
       contents: prompt,
       config: {
         responseMimeType: "application/json",
@@ -3134,7 +3134,7 @@ Return a JSON array matching the schema.`;
 
   try {
     const response = await withRetry(() => ai.models.generateContent({
-      model: "gemini-3.7-flash",
+      model: "gemini-3.5-flash",
       contents: prompt,
       config: {
         responseMimeType: "application/json",
@@ -3324,7 +3324,7 @@ DESIGN INSTRUCTIONS:
     );
 
     const svgPromise = ai.models.generateContent({
-      model: "gemini-2.5-flash",
+      model: "gemini-3.5-flash",
       contents: [{ parts: [{ text: svgSystemPrompt }] }]
     });
 
@@ -3632,7 +3632,7 @@ Return a JSON array of objects with keys: "anchorText", "visualDescription". Out
 
   try {
     const response = await withRetry(() => ai.models.generateContent({
-      model: "gemini-2.5-flash",
+      model: "gemini-3.5-flash",
       contents: prompt,
       config: {
         responseMimeType: "application/json"
