@@ -1534,7 +1534,7 @@ export default function App() {
     setTimeout(() => setHistoryNotice(null), 3000);
   };
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [customApiKey, setCustomApiKey] = useState('');
+  const [customApiKey, setCustomApiKey] = useState(() => localStorage.getItem('user_custom_gemini_key') || localStorage.getItem('gemini_api_key') || process.env.GEMINI_API_KEY || '');
   const [isApiKeyModalOpen, setIsApiKeyModalOpen] = useState(false);
   const [apiKeyModalMessage, setApiKeyModalMessage] = useState<string | null>(null);
 

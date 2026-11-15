@@ -54,7 +54,7 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
 
   // BYOK API Keys
   const [userGeminiKey, setUserGeminiKey] = useState(
-    localStorage.getItem('user_custom_gemini_key') || localStorage.getItem('gemini_api_key') || ''
+    localStorage.getItem('user_custom_gemini_key') || localStorage.getItem('gemini_api_key') || process.env.GEMINI_API_KEY || ''
   );
   const [userElevenLabsKey, setUserElevenLabsKey] = useState(
     localStorage.getItem('user_custom_elevenlabs_key') || localStorage.getItem('elevenlabs_api_key') || ''

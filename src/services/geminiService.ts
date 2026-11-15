@@ -7,8 +7,15 @@ export interface Attachment {
 }
 
 function getGeminiBaseUrl() {
-  if (typeof window !== 'undefined' && window.location && window.location.origin) {
-    return `${window.location.origin}/gemini-api-proxy`;
+  if (typeof window !== 'undefined' && window.location) {
+    // On Firebase Hosting or static domains, call Generative Language API directly
+    if (window.location.hostname.endsWith('.web.app') || window.location.hostname.endsWith('.firebaseapp.com')) {
+      return "https://generativelanguage.googleapis.com";
+    }
+    // Use server proxy for localhost or AI Studio containers
+    if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' || window.location.hostname.includes('ai.studio') || window.location.hostname.includes('run.app')) {
+      return `${window.location.origin}/gemini-api-proxy`;
+    }
   }
   return "https://generativelanguage.googleapis.com";
 }
